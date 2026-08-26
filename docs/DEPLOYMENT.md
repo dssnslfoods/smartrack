@@ -26,7 +26,7 @@
 | ตัวแปร | ค่าเริ่มต้น | คำอธิบาย |
 |--------|-----------|---------|
 | `PORT` | 4000 | พอร์ตของระบบ |
-| `DATABASE_URL` | — | **จำเป็น** — connection string ของ Supabase (Settings → Database → Connection string → URI) |
+| `DATABASE_URL` | — | **จำเป็น** — connection string ของ Supabase (Dashboard → ปุ่ม Connect → **Session pooler**) |
 | `RAG_DB_POOL` | 10 | จำนวน connection สูงสุดใน pool |
 | `RAG_ADMIN_PASSWORD` | — | รหัสผ่าน `admin` ที่จะสร้างตอนบูตครั้งแรก ถ้าไม่ตั้ง ระบบจะสุ่มให้แล้วพิมพ์ใน log ครั้งเดียว |
 | `RAG_SEED` | — | ตั้งเป็น `demo` เพื่อสร้าง**ข้อมูลตัวอย่าง**ตอนบูตครั้งแรก (สำหรับทดลองใช้เท่านั้น — อย่าใช้กับระบบจริง) |
@@ -53,9 +53,14 @@ sudo journalctl -u rag -n 30      # ดูรหัสผ่านที่ร�
 ```bash
 cp .env.example .env          # แล้วใส่ DATABASE_URL กับ RAG_ADMIN_PASSWORD
 npm ci
+npm run check                 # ตรวจว่าต่อฐานข้อมูลได้ (บอกวิธีแก้ถ้าพลาด)
 npm run migrate               # สร้างตาราง/view/index บน Supabase (รันซ้ำได้ ไม่ลบข้อมูล)
 npm start
 ```
+
+> **ต่อไม่ได้ / ขึ้น `ENOTFOUND db.<ref>.supabase.co`?**
+> โปรเจกต์ Supabase ที่สร้างใหม่ส่วนใหญ่ไม่เปิดให้ต่อตรงผ่าน IPv4
+> ให้ใช้ **Connection Pooler** แทน — Dashboard → ปุ่ม Connect → Session pooler แล้วคัดลอก URI มาใช้
 
 ต้องการข้อมูลตัวอย่างสำหรับทดลองใช้ (อย่าใช้กับระบบจริง):
 
