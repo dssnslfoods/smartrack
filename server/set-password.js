@@ -2,12 +2,11 @@
 //
 // ใช้งาน:  npm run set-password
 //
-// - พิมพ์รหัสผ่านแบบไม่แสดงบนหน้าจอ และไม่ตกไปอยู่ใน shell history
+// - พิมพ์รหัสผ่านแบบไม่แสดงตัวอักษร (ขึ้น * แทน) และไม่ตกไปอยู่ใน shell history
 // - เข้ารหัสอักขระพิเศษ (@ : / # ? ฯลฯ) ให้อัตโนมัติ
 // - ทดสอบเชื่อมต่อทันทีก่อนบันทึกจริง — ถ้าต่อไม่ได้จะไม่แก้ไฟล์
 import { readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 
 const ENV = join(process.cwd(), '.env');
 if (!existsSync(ENV)) {
@@ -31,31 +30,64 @@ if (!m) {
 const [, scheme, user, , rest] = m;
 console.log(`จะเปลี่ยนรหัสผ่านของ  ${scheme}${user}:••••••@${rest}\n`);
 
-/** อ่านรหัสผ่านโดยไม่แสดงตัวอักษรบนหน้าจอ */
-const askHidden = (prompt) => new Promise((resolve) => {
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  const onData = (ch) => {
-    // ระหว่างพิมพ์ ให้ลบสิ่งที่ echo ออกมาทิ้ง
-    if (![`\n`, `\r`, ``].includes(ch.toString())) {
-      process.stdout.clearLine(0);
-      process.stdout.cursorTo(0);
-      process.stdout.write(prompt);
+const ETX = String.fromCharCode(3);      // Ctrl+C
+const DEL = String.fromCharCode(127);    // Backspace
+
+/**
+ * อ่านรหัสผ่านแบบไม่แสดงตัวอักษร — ใช้ raw mode อ่านทีละปุ่ม
+ * (เชื่อถือได้กว่าการใช้ readline แล้วลบสิ่งที่ echo ออกมา ซึ่งทำให้ตัวอักษรตกหล่น)
+ */
+const askHidden = (prompt) => new Promise((resolve, reject) => {
+  // รองรับการส่งค่ามาทาง pipe:  echo 'รหัส' | npm run set-password
+  if (!process.stdin.isTTY) {
+    let buf = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (d) => { buf += d; });
+    process.stdin.on('end', () => resolve(buf.split('\n')[0]));
+    return;
+  }
+
+  process.stdout.write(prompt);
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.setEncoding('utf8');
+
+  let pw = '';
+  const finish = (fn, arg) => {
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+    process.stdin.removeListener('data', onKey);
+    process.stdout.write('\n');
+    fn(arg);
+  };
+  const onKey = (key) => {
+    for (const ch of key) {
+      if (ch === '\r' || ch === '\n') return finish(resolve, pw);
+      if (ch === ETX) return finish(reject, new Error('ยกเลิกแล้ว — ไม่ได้แก้ไฟล์ .env'));
+      if (ch === DEL || ch === '\b') {
+        if (pw.length) { pw = pw.slice(0, -1); process.stdout.write('\b \b'); }
+        continue;
+      }
+      if (ch < ' ') continue;                 // ข้ามอักขระควบคุมอื่น ๆ
+      pw += ch;
+      process.stdout.write('*');              // แสดง * ให้เห็นว่าพิมพ์ติดกี่ตัว
     }
   };
-  process.stdin.on('data', onData);
-  rl.question(prompt, (answer) => {
-    process.stdin.removeListener('data', onData);
-    rl.close();
-    process.stdout.write('\n');
-    resolve(answer);
-  });
+  process.stdin.on('data', onKey);
 });
 
-const pw = (await askHidden('รหัสผ่านฐานข้อมูลใหม่: ')).trim();
+let pw;
+try {
+  pw = (await askHidden('รหัสผ่านฐานข้อมูลใหม่: ')).trim();
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 if (!pw) {
   console.error('❌ ไม่ได้กรอกรหัสผ่าน — ยกเลิก');
   process.exit(1);
 }
+console.log(`(รับมา ${pw.length} ตัวอักษร)`);
 
 const encoded = encodeURIComponent(pw);
 const url = `${scheme}${user}:${encoded}@${rest}`;
@@ -78,7 +110,13 @@ try {
   console.log('ไม่สำเร็จ ❌');
   console.error(`   ${err.message}`);
   if (/password authentication failed/i.test(err.message))
-    console.error('\n➜ รหัสผ่านไม่ถูกต้อง — ไม่ได้แก้ไฟล์ .env ลองใหม่อีกครั้ง');
+    console.error(`
+➜ รหัสผ่านไม่ถูกต้อง — ไม่ได้แก้ไฟล์ .env
+
+   ตรวจสอบว่า:
+   • คัดลอกรหัสจาก Supabase มาครบ ไม่มีช่องว่างหน้า/หลัง
+   • ถ้าเพิ่งกด Reset password ต้องรอสักครู่ให้ระบบอัปเดต แล้วลองใหม่
+   • จำนวนตัวอักษรที่ระบบรับมา (แสดงไว้ด้านบน) ตรงกับรหัสจริงหรือไม่`);
   process.exit(1);
 }
 
