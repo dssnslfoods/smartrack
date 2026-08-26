@@ -16,7 +16,8 @@
     "test": "node --test test/*.test.js",
     "migrate": "node server/migrate.js",
     "check": "node server/check.js",
-    "import-sqlite": "node server/import-sqlite.js"
+    "import-sqlite": "node server/import-sqlite.js",
+    "set-password": "node server/set-password.js"
   },
   "dependencies": {
     "bwip-js": "^4.11.4",
