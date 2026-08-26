@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(__dirname, '..', '..');
-const DB_PATH = process.env.RAG_DB || join(ROOT, 'data', 'rag.db');
+export const DB_PATH = process.env.RAG_DB || join(ROOT, 'data', 'rag.db');
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
 

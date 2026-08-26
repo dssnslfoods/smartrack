@@ -6,9 +6,16 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { existsSync } from 'node:fs';
 
-// Seed DB ใน /tmp ถ้ายังไม่มี (Cloud Functions filesystem เป็น read-only ยกเว้น /tmp)
+// ⚠️ เลิกใช้แล้ว — อย่า deploy ระบบขึ้น Cloud Functions
+//
+// Cloud Functions เขียนไฟล์ได้เฉพาะ /tmp ซึ่งเป็นหน่วยความจำชั่วคราวประจำแต่ละ instance
+// เมื่อ instance ถูกปิด (ไม่มีคนใช้ ~15 นาที) ข้อมูลจะหายทั้งหมด แล้ว seed ใหม่ตอนเปิดครั้งถัดไป
+// ทำให้ทุกอย่างที่บันทึกไว้ย้อนกลับไปเป็นค่าตั้งต้น
+//
+// ระบบจริงต้องรันด้วย server/index.js บนเครื่องที่มีดิสก์ถาวร (ดู docs/DEPLOYMENT.md)
 if (process.env.FUNCTIONS_EMULATOR || process.env.K_SERVICE) {
   process.env.RAG_DB = process.env.RAG_DB || '/tmp/rag.db';
+  console.error('[ร้ายแรง] กำลังรันบน Cloud Functions — ข้อมูลจะหายทุกครั้งที่ instance ถูกปิด ห้ามใช้เก็บข้อมูลจริง');
 }
 
 import { routes, csvExports } from './server/api/routes.js';

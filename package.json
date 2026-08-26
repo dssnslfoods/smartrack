@@ -13,7 +13,8 @@
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js",
     "reset": "rm -f data/rag.db && node server/seed.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "backup": "node server/backup.js"
   },
   "dependencies": {
     "bwip-js": "^4.11.4",

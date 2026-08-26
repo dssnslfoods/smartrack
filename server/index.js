@@ -1,14 +1,48 @@
 // RAG Management System — HTTP Server (Node.js zero-framework)
 import { createServer } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { routes, csvExports } from './api/routes.js';
 import { HttpError, json, readBody, notFound } from './lib/http.js';
-import { userFromRequest, requirePerm } from './lib/auth.js';
-import { ROOT } from './lib/db.js';
+import { userFromRequest, requirePerm, hashSecret } from './lib/auth.js';
+import { ROOT, DB_PATH, get, run } from './lib/db.js';
 
 const PORT = Number(process.env.PORT || 4000);
 const PUBLIC = join(ROOT, 'public');
+
+// ---------- ตรวจว่าฐานข้อมูลอยู่บนที่เก็บถาวรจริง ----------
+// /tmp บน Cloud Run/Cloud Functions เป็นหน่วยความจำชั่วคราว — ข้อมูลหายทุกครั้งที่ restart
+if (/^\/tmp\//.test(DB_PATH)) {
+  console.error(`
+  ╔════════════════════════════════════════════════════════════════╗
+  ║  ⚠️  คำเตือน: ฐานข้อมูลอยู่ที่ ${DB_PATH}
+  ║  /tmp เป็นที่เก็บชั่วคราว — ข้อมูลจะหายทั้งหมดเมื่อระบบ restart
+  ║  กรุณาตั้งค่า RAG_DB ให้ชี้ไปยังดิสก์ถาวร เช่น /data/rag.db
+  ╚════════════════════════════════════════════════════════════════╝
+`);
+}
+
+// ---------- บูตครั้งแรก: สร้างบัญชีผู้ดูแลระบบถ้าฐานข้อมูลยังว่าง ----------
+if (!get('SELECT COUNT(*) AS n FROM users').n) {
+  if (process.env.RAG_SEED === 'demo') {
+    console.log('ฐานข้อมูลว่าง + RAG_SEED=demo — กำลังสร้างข้อมูลตัวอย่าง…');
+    await import('./seed.js');
+  } else {
+    const pw = process.env.RAG_ADMIN_PASSWORD || randomBytes(9).toString('base64url');
+    run('INSERT INTO users (username, full_name, role, password_hash) VALUES (?,?,?,?)',
+      'admin', 'ผู้ดูแลระบบ', 'ADMIN', hashSecret(pw));
+    console.log(`
+  ╔════════════════════════════════════════════════════════════════╗
+  ║  เริ่มต้นระบบครั้งแรก — สร้างบัญชีผู้ดูแลระบบแล้ว
+  ║     ชื่อผู้ใช้ : admin
+  ║     รหัสผ่าน  : ${pw}
+  ║  ${process.env.RAG_ADMIN_PASSWORD ? 'มาจากตัวแปร RAG_ADMIN_PASSWORD' : '⚠️ สุ่มให้อัตโนมัติ — บันทึกไว้แล้วเปลี่ยนทันทีหลังเข้าระบบ'}
+  ║  (ต้องการข้อมูลตัวอย่างสำหรับทดลองใช้ ให้ตั้ง RAG_SEED=demo)
+  ╚════════════════════════════════════════════════════════════════╝
+`);
+  }
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
