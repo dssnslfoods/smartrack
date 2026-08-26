@@ -81,7 +81,7 @@ RAG/
 │   └── sw.js                 Service Worker (Offline Mode)
 ├── test/api.test.js          ทดสอบตาม Acceptance Criteria
 ├── docs/                     สถาปัตยกรรม · API · Traceability · แผนขึ้น Production
-└── data/rag.db               ฐานข้อมูล SQLite (สร้างอัตโนมัติ)
+└── server/schema.postgres.sql  โครงสร้างฐานข้อมูล PostgreSQL
 ```
 
 ## เอกสารประกอบ
@@ -94,6 +94,6 @@ RAG/
 
 ## เทคโนโลยี
 
-Node.js 22 (ไม่มี framework ฝั่ง server) · SQLite (`node:sqlite`) ในระยะ Prototype → PostgreSQL ตอนขึ้น Production ·
+Node.js 22 (ไม่มี framework ฝั่ง server) · PostgreSQL บน Supabase (`pg`) ·
 Web App แบบ Vanilla JS + PWA (ไม่มี build step — แก้ไฟล์แล้วรีเฟรชได้ทันที เหมาะกับทีม IT ขนาดเล็ก) ·
 `bwip-js` สำหรับ Barcode/QR บนป้าย

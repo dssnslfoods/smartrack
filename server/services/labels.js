@@ -3,11 +3,11 @@ import bwip from 'bwip-js';
 import { all } from '../lib/db.js';
 import { notFound } from '../lib/http.js';
 
-const esc = (s) =>
+const esc = async (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export async function locationLabels({ rag_id }) {
-  const rows = all(
+  const rows = await all(
     `SELECT l.*, r.rag_no, z.zone_code FROM locations l
        JOIN rags r ON r.rag_id = l.rag_id JOIN zones z ON z.zone_id = r.zone_id
       WHERE l.rag_id = ? ORDER BY l.level, l.depth`,

@@ -9,14 +9,14 @@ export const locationCode = (zoneCode, ragNo, level, depth) => `${zoneCode}-${ra
  * เช่น 4 ชั้น × 6 ตอน → 24 ตำแหน่ง (FG-A01-L1-D1 … FG-A01-L4-D6)
  * ตำแหน่งที่ถูกตัดออกจะลบได้เฉพาะเมื่อไม่มีสินค้าอยู่
  */
-export function syncRagLocations(ragId) {
-  const rag = get(
+export async function syncRagLocations(ragId) {
+  const rag = await get(
     'SELECT r.*, z.zone_code FROM rags r JOIN zones z ON z.zone_id = r.zone_id WHERE r.rag_id = ?',
     ragId,
   );
   if (!rag) throw notFound('ไม่พบชั้นวาง');
 
-  const existing = all('SELECT * FROM locations WHERE rag_id = ?', ragId);
+  const existing = await all('SELECT * FROM locations WHERE rag_id = ?', ragId);
   const wanted = new Set();
   for (let lv = 1; lv <= rag.total_levels; lv++)
     for (let dp = 1; dp <= rag.total_depths; dp++) wanted.add(`${lv}:${dp}`);
@@ -29,15 +29,15 @@ export function syncRagLocations(ragId) {
   const have = new Set(existing.map((l) => `${l.level}:${l.depth}`));
   const toCreate = [...wanted].filter((k) => !have.has(k)).map((k) => k.split(':').map(Number));
 
-  tx(() => {
-    for (const l of toRemove) run('DELETE FROM locations WHERE location_id = ?', l.location_id);
+  await tx(async () => {
+    for (const l of toRemove) await run('DELETE FROM locations WHERE location_id = ?', l.location_id);
     for (const [lv, dp] of toCreate)
-      run('INSERT INTO locations (location_code, rag_id, level, depth) VALUES (?,?,?,?)',
+      await run('INSERT INTO locations (location_code, rag_id, level, depth) VALUES (?,?,?,?)',
         locationCode(rag.zone_code, rag.rag_no, lv, dp), ragId, lv, dp);
     // ปรับรหัสตำแหน่งเมื่อเปลี่ยนรหัสโซนหรือเลขชั้นวาง
-    for (const l of all('SELECT * FROM locations WHERE rag_id = ?', ragId)) {
+    for (const l of await all('SELECT * FROM locations WHERE rag_id = ?', ragId)) {
       const code = locationCode(rag.zone_code, rag.rag_no, l.level, l.depth);
-      if (code !== l.location_code) run('UPDATE locations SET location_code = ? WHERE location_id = ?', code, l.location_id);
+      if (code !== l.location_code) await run('UPDATE locations SET location_code = ? WHERE location_id = ?', code, l.location_id);
     }
   });
 
@@ -54,27 +54,27 @@ export function expiryState(days) {
 }
 
 /** แผนผังชั้นวาง 1 ตัว: ตารางชั้น × ความลึก พร้อมสินค้าที่อยู่ในแต่ละช่อง */
-export function rackMap(ragId) {
-  const rag = get(
+export async function rackMap(ragId) {
+  const rag = await get(
     `SELECT r.*, z.zone_code, z.zone_name, z.zone_id FROM rags r
        JOIN zones z ON z.zone_id = r.zone_id WHERE r.rag_id = ?`,
     ragId,
   );
   if (!rag) throw notFound('ไม่พบชั้นวาง');
 
-  const cells = all(
+  const cells = (await all(
     `SELECT l.location_id, l.location_code, l.level, l.depth, l.status,
             i.item_id, i.lot_no, i.exp_date, i.quantity, i.stored_at, i.note,
             s.sku_code, s.sku_name, s.unit,
             CASE WHEN i.exp_date IS NULL THEN NULL
-                 ELSE CAST(julianday(i.exp_date) - julianday(date('now','localtime')) AS INTEGER) END AS days_to_expiry
+                 ELSE (i.exp_date::date - (now() AT TIME ZONE 'Asia/Bangkok')::date) END AS days_to_expiry
        FROM locations l
        LEFT JOIN stock_items i ON i.location_id = l.location_id AND i.status = 'IN_STOCK'
        LEFT JOIN skus s ON s.sku_id = i.sku_id
       WHERE l.rag_id = ?
       ORDER BY l.level DESC, l.depth ASC`,
     ragId,
-  ).map((c) => ({ ...c, expiry: expiryState(c.days_to_expiry) }));
+  )).map((c) => ({ ...c, expiry: expiryState(c.days_to_expiry) }));
 
   return { rag, cells, stats: countStats(cells) };
 }
@@ -91,8 +91,8 @@ export function countStats(cells) {
   };
 }
 
-export const locationByCode = (code) =>
-  get(
+export const locationByCode = async (code) =>
+  await get(
     `SELECT l.*, r.rag_no, r.rag_id, z.zone_id, z.zone_code, z.zone_name
        FROM locations l JOIN rags r ON r.rag_id = l.rag_id JOIN zones z ON z.zone_id = r.zone_id
       WHERE UPPER(l.location_code) = UPPER(?)`,
@@ -100,8 +100,8 @@ export const locationByCode = (code) =>
   );
 
 /** ตำแหน่งว่างที่พร้อมจัดเก็บ (ใช้ในหน้าจัดเก็บสินค้า) */
-export const emptyLocations = ({ zoneId = null, ragId = null, limit = 300 } = {}) =>
-  all(
+export const emptyLocations = async ({ zoneId = null, ragId = null, limit = 300 } = {}) =>
+  await all(
     `SELECT l.location_id, l.location_code, l.level, l.depth,
             r.rag_id, r.rag_no, z.zone_id, z.zone_code, z.zone_name
        FROM locations l

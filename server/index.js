@@ -1,4 +1,5 @@
 // RAG Management System — HTTP Server (Node.js zero-framework)
+import './lib/env.js';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
@@ -6,31 +7,22 @@ import { extname, join, normalize } from 'node:path';
 import { routes, csvExports } from './api/routes.js';
 import { HttpError, json, readBody, notFound } from './lib/http.js';
 import { userFromRequest, requirePerm, hashSecret } from './lib/auth.js';
-import { ROOT, DB_PATH, get, run } from './lib/db.js';
+import { ROOT, get, run, migrate } from './lib/db.js';
 
 const PORT = Number(process.env.PORT || 4000);
 const PUBLIC = join(ROOT, 'public');
 
-// ---------- ตรวจว่าฐานข้อมูลอยู่บนที่เก็บถาวรจริง ----------
-// /tmp บน Cloud Run/Cloud Functions เป็นหน่วยความจำชั่วคราว — ข้อมูลหายทุกครั้งที่ restart
-if (/^\/tmp\//.test(DB_PATH)) {
-  console.error(`
-  ╔════════════════════════════════════════════════════════════════╗
-  ║  ⚠️  คำเตือน: ฐานข้อมูลอยู่ที่ ${DB_PATH}
-  ║  /tmp เป็นที่เก็บชั่วคราว — ข้อมูลจะหายทั้งหมดเมื่อระบบ restart
-  ║  กรุณาตั้งค่า RAG_DB ให้ชี้ไปยังดิสก์ถาวร เช่น /data/rag.db
-  ╚════════════════════════════════════════════════════════════════╝
-`);
-}
+// ---------- เตรียมฐานข้อมูล: สร้างตาราง/view ถ้ายังไม่มี ----------
+await migrate();
 
 // ---------- บูตครั้งแรก: สร้างบัญชีผู้ดูแลระบบถ้าฐานข้อมูลยังว่าง ----------
-if (!get('SELECT COUNT(*) AS n FROM users').n) {
+if (!(await get('SELECT COUNT(*) AS n FROM users')).n) {
   if (process.env.RAG_SEED === 'demo') {
     console.log('ฐานข้อมูลว่าง + RAG_SEED=demo — กำลังสร้างข้อมูลตัวอย่าง…');
     await import('./seed.js');
   } else {
     const pw = process.env.RAG_ADMIN_PASSWORD || randomBytes(9).toString('base64url');
-    run('INSERT INTO users (username, full_name, role, password_hash) VALUES (?,?,?,?)',
+    await run('INSERT INTO users (username, full_name, role, password_hash) VALUES (?,?,?,?)',
       'admin', 'ผู้ดูแลระบบ', 'ADMIN', hashSecret(pw));
     console.log(`
   ╔════════════════════════════════════════════════════════════════╗
@@ -114,11 +106,11 @@ const server = createServer(async (req, res) => {
     // ---- ดาวน์โหลด CSV: /api/export/{stock|movements}.csv ----
     const csvMatch = url.pathname.match(/^\/api\/export\/([a-z]+)\.csv$/);
     if (csvMatch && req.method === 'GET') {
-      const user = userFromRequest(req);
+      const user = await userFromRequest(req);
       requirePerm(user, 'view');
       const exporter = csvExports[csvMatch[1]];
       if (!exporter) throw notFound('ไม่พบข้อมูลที่ต้องการ Export');
-      const { filename, body } = exporter(query);
+      const { filename, body } = await exporter(query);
       res.writeHead(200, {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${filename}"`,
@@ -132,7 +124,7 @@ const server = createServer(async (req, res) => {
       throw notFound(`ไม่พบ endpoint ${req.method} ${url.pathname}`);
     }
 
-    const user = userFromRequest(req);
+    const user = await userFromRequest(req);
     if (hit.route.perm) requirePerm(user, hit.route.perm);
     const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
     const result = await hit.route.handler({ req, res, params: hit.params, query, body, user });

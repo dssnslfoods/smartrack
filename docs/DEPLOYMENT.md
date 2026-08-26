@@ -1,23 +1,22 @@
 # การนำระบบขึ้นใช้งานจริง (Deployment Guide)
 
-> ## ⚠️ ห้าม deploy ระบบนี้ขึ้น Cloud Functions / Cloud Run
+> ## ข้อมูลเก็บบน Supabase (PostgreSQL)
 >
-> ระบบเก็บข้อมูลด้วยไฟล์ SQLite จึงต้องรันบนเครื่องที่มี **ดิสก์ถาวร** เท่านั้น
+> ตั้งแต่เวอร์ชันนี้ระบบไม่เก็บข้อมูลไว้ในเครื่องแล้ว ทุกอย่างอยู่บนฐานข้อมูล PostgreSQL
+> ที่ Supabase ดูแลให้ (สำรองข้อมูลอัตโนมัติ) ตัวระบบจึงเป็น **stateless** —
+> deploy ซ้ำ ปิดเปิด หรือเพิ่มจำนวน instance ได้โดยข้อมูลไม่หาย
 >
-> บริการแบบ serverless (Cloud Functions, Cloud Run, Vercel, Netlify Functions) เขียนไฟล์ได้เฉพาะ
-> `/tmp` ซึ่งเป็นหน่วยความจำชั่วคราวประจำแต่ละ container **ข้อมูลจะหายทั้งหมดเมื่อ instance ถูกปิด**
-> (ปกติปิดอัตโนมัติเมื่อไม่มีคนใช้ประมาณ 15 นาที) แล้วระบบจะสร้างข้อมูลตั้งต้นใหม่
-> ทำให้ทุกอย่างที่บันทึกไว้ — ชื่อคลัง สต๊อก ประวัติการเคลื่อนย้าย ผู้ใช้ — ย้อนกลับไปเป็นค่าเดิม
+> สิ่งเดียวที่ต้องตั้งให้ถูกคือ `DATABASE_URL` **ห้าม hard-code ลงในโค้ดหรือ push ขึ้น Git**
 >
-> ถ้าจำเป็นต้องใช้ serverless จริง ๆ ต้องเปลี่ยนไปใช้ฐานข้อมูลภายนอก (Cloud SQL / Turso)
-> ซึ่งต้องแก้โค้ดชั้นเข้าถึงข้อมูลทั้งหมด
+> รันได้ทั้งบน VM/VPS, Docker, Cloud Run และ Cloud Functions
 
 ## 1. สภาพแวดล้อมที่ต้องมี
 
 | รายการ | ข้อกำหนดขั้นต่ำ | หมายเหตุ |
 |--------|----------------|---------|
-| Server | 2 vCPU / 4 GB RAM / 40 GB SSD | Cloud VPS (~2,000–3,000 บาท/เดือน) หรือเครื่องในโรงงาน |
-| Node.js | เวอร์ชัน 22 ขึ้นไป | ระบบใช้ `node:sqlite` ที่มีใน Node 22+ |
+| ฐานข้อมูล | Supabase (PostgreSQL 15+) | แพ็กเกจฟรีใช้ทดลองได้ · ระบบจริงควรใช้ Pro เพราะแพ็กเกจฟรีหยุดโปรเจกต์เมื่อไม่มีการใช้งาน ~7 วัน |
+| Server | 1 vCPU / 1 GB RAM | ระบบไม่เก็บข้อมูลในเครื่องแล้ว จึงใช้เครื่องเล็กได้ · หรือ deploy แบบ serverless |
+| Node.js | เวอร์ชัน 22 ขึ้นไป | ระบบใช้ความสามารถของ Node 22+ (เช่น `process.loadEnvFile`) |
 | เครือข่าย | Wi-Fi ครอบคลุมพื้นที่คลัง | จุดอับสัญญาณคือความเสี่ยงหลักของงานสแกน |
 | อุปกรณ์ | Tablet 8–10" (Android/iPad) · Handheld Scanner (USB/Bluetooth แบบ HID) | เครื่องสแกนแบบ HID ใช้ได้ทันทีโดยไม่ต้องลงไดรเวอร์ |
 | ป้ายสติกเกอร์ | ตำแหน่ง 5×3 ซม. ทนน้ำ/ทนแดด · พาเลท 10×7 ซม. | แนะนำ Polyester/Synthetic ไม่ใช่กระดาษธรรมดา (ความชื้นในคลัง) |
@@ -27,7 +26,8 @@
 | ตัวแปร | ค่าเริ่มต้น | คำอธิบาย |
 |--------|-----------|---------|
 | `PORT` | 4000 | พอร์ตของระบบ |
-| `RAG_DB` | `data/rag.db` | ตำแหน่งไฟล์ฐานข้อมูล — **ต้องอยู่บนดิสก์ถาวร** (ระบบจะเตือนถ้าชี้ไป `/tmp`) |
+| `DATABASE_URL` | — | **จำเป็น** — connection string ของ Supabase (Settings → Database → Connection string → URI) |
+| `RAG_DB_POOL` | 10 | จำนวน connection สูงสุดใน pool |
 | `RAG_ADMIN_PASSWORD` | — | รหัสผ่าน `admin` ที่จะสร้างตอนบูตครั้งแรก ถ้าไม่ตั้ง ระบบจะสุ่มให้แล้วพิมพ์ใน log ครั้งเดียว |
 | `RAG_SEED` | — | ตั้งเป็น `demo` เพื่อสร้าง**ข้อมูลตัวอย่าง**ตอนบูตครั้งแรก (สำหรับทดลองใช้เท่านั้น — อย่าใช้กับระบบจริง) |
 | `RAG_LINE_CHANNEL_TOKEN` + `RAG_LINE_TO` | — | แจ้งเตือนผ่าน **LINE Messaging API** (แนะนำ) |
@@ -35,7 +35,7 @@
 | `RAG_WEBHOOK_URL` | — | ส่งเข้า Webhook ทั่วไป (Email Gateway / Teams / ระบบภายใน) |
 | `RAG_LOG` | — | ตั้งเป็น `off` เพื่อปิด log ราย request |
 
-ถ้าไม่ตั้งค่าใด ๆ ระบบจะบันทึกข้อความแจ้งเตือนลง `data/notifications.log` (ไม่มีการส่งออกภายนอก)
+ค่าทั้งหมดอ่านจากไฟล์ `.env` ที่โฟลเดอร์หลัก (ดูตัวอย่างใน `.env.example`) — ไฟล์นี้ถูกกันไม่ให้ขึ้น Git แล้ว
 
 ### การบูตครั้งแรก
 
@@ -48,48 +48,43 @@ sudo journalctl -u rag -n 30      # ดูรหัสผ่านที่ร�
 
 การบูตครั้งถัดไประบบจะไม่แตะข้อมูลเดิม (ตรวจจากตาราง `users` ว่ามีคนอยู่แล้วหรือยัง)
 
-## 2.5 ทางเลือก: รันด้วย Docker + ดิสก์ถาวร
-
-อิมเมจกำหนดให้ฐานข้อมูลอยู่ที่ `/data/rag.db` จึงต้อง **mount ดิสก์จริงเข้ามาที่ `/data` เสมอ**
-ถ้าไม่ mount ข้อมูลจะอยู่แค่ในคอนเทนเนอร์และหายเมื่อ deploy ใหม่
+## 2.5 ตั้งค่าครั้งแรก
 
 ```bash
-# สร้างที่เก็บถาวรบนเครื่อง
-sudo mkdir -p /srv/rag-data
+cp .env.example .env          # แล้วใส่ DATABASE_URL กับ RAG_ADMIN_PASSWORD
+npm ci
+npm run migrate               # สร้างตาราง/view/index บน Supabase (รันซ้ำได้ ไม่ลบข้อมูล)
+npm start
+```
 
+ต้องการข้อมูลตัวอย่างสำหรับทดลองใช้ (อย่าใช้กับระบบจริง):
+
+```bash
+RAG_SEED=demo npm start
+```
+
+## 2.6 ทางเลือก: รันด้วย Docker
+
+ไม่ต้อง mount ดิสก์ใด ๆ เพราะข้อมูลอยู่บน Supabase:
+
+```bash
 docker build -t deleaf-wms .
-docker run -d --name rag \
-  --restart unless-stopped \
-  -p 80:8080 \
-  -v /srv/rag-data:/data \
+docker run -d --name rag --restart unless-stopped -p 80:8080 \
+  -e DATABASE_URL='postgresql://postgres:<รหัสผ่าน>@db.<ref>.supabase.co:5432/postgres' \
   -e RAG_ADMIN_PASSWORD='ตั้งรหัสผ่านที่ปลอดภัย' \
   deleaf-wms
 ```
 
-อัปเดตเวอร์ชันใหม่ — ข้อมูลใน `/srv/rag-data` จะอยู่ครบเหมือนเดิม:
+## 2.7 สำรองข้อมูล
+
+Supabase สำรองข้อมูลให้อัตโนมัติทุกวัน (แพ็กเกจ Pro ย้อนเวลาได้แบบ Point-in-Time)
+ถ้าต้องการสำรองเก็บไว้เองเพิ่ม:
 
 ```bash
-git pull && docker build -t deleaf-wms . && docker rm -f rag
-# แล้วรัน docker run ชุดเดิมอีกครั้ง
+pg_dump "$DATABASE_URL" -Fc -f rag-$(date +%F).dump
 ```
 
-## 2.6 สำรองข้อมูล
-
-ใช้ `VACUUM INTO` จึงสำรองได้ขณะระบบทำงานอยู่ ไม่ต้องปิดเซิร์ฟเวอร์:
-
-```bash
-RAG_DB=/srv/rag-data/rag.db npm run backup
-# → /srv/rag-data/backups/rag-2026-08-26-09-30.db
-```
-
-ตั้งให้สำรองอัตโนมัติทุกวันตี 2 ด้วย cron:
-
-```cron
-0 2 * * * cd /srv/rag && RAG_DB=/srv/rag-data/rag.db /usr/bin/npm run backup >> /var/log/rag-backup.log 2>&1
-```
-
-> ดิสก์ถาวรกัน "ข้อมูลหายตอน restart" ได้ แต่กัน "ดิสก์เสีย" ไม่ได้
-> ควรคัดลอกไฟล์สำรองออกไปเก็บนอกเครื่องด้วย (Google Drive / S3 / NAS)
+> การกู้คืนควรทดลองอย่างน้อยปีละครั้ง — ไฟล์สำรองที่กู้ไม่ได้ ไม่ต่างจากไม่มีไฟล์สำรอง
 
 ## 3. ติดตั้งเป็นบริการถาวร (systemd)
 
@@ -104,7 +99,7 @@ Type=simple
 User=rag
 WorkingDirectory=/opt/rag
 Environment=PORT=4000
-Environment=RAG_DB=/var/lib/rag/rag.db
+EnvironmentFile=/opt/rag/.env          # มี DATABASE_URL อยู่ข้างใน (chmod 600)
 ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
@@ -117,33 +112,35 @@ WantedBy=multi-user.target
 
 ## 4. สำรองข้อมูล (NFR-06) และกู้คืน (NFR-07)
 
+Supabase สำรองข้อมูลอัตโนมัติให้ทุกวัน และแพ็กเกจ Pro กู้คืนย้อนเวลาได้ (Point-in-Time Recovery)
+จึงตอบ **RPO ≤ 1 ชั่วโมง** ตาม NFR-07 ได้โดยไม่ต้องตั้ง cron เอง
+
+เพิ่มสำเนาไว้นอก Supabase (แนะนำ):
+
 ```bash
-# สำรองรายวัน เก็บย้อนหลัง 90 วัน — ตั้งใน crontab เวลา 22:30 น.
-sqlite3 /var/lib/rag/rag.db ".backup '/backup/rag-$(date +\%F).db'"
-find /backup -name 'rag-*.db' -mtime +90 -delete
+# ตั้งใน crontab เวลา 22:30 น. — เก็บย้อนหลัง 90 วัน
+pg_dump "$DATABASE_URL" -Fc -f /backup/rag-$(date +\%F).dump
+find /backup -name 'rag-*.dump' -mtime +90 -delete
 ```
 
-- **RPO ≤ 1 ชั่วโมง** ตาม NFR-07 ต้องสำรองถี่กว่าวันละครั้ง — แนะนำ `.backup` ทุกชั่วโมงในเวลาทำงาน แล้วส่งขึ้น Object Storage
-- **RTO ≤ 4 ชั่วโมง** — เตรียมสคริปต์กู้คืนและซ้อมกู้คืนอย่างน้อยปีละครั้ง
+- **RTO ≤ 4 ชั่วโมง** — เตรียมสคริปต์กู้คืน (`pg_restore`) และซ้อมกู้คืนอย่างน้อยปีละครั้ง
 
-## 5. ย้ายไปใช้ PostgreSQL (แนะนำเมื่อขึ้น Production)
+## 5. หมายเหตุการย้ายจาก SQLite (ทำเสร็จแล้ว)
 
-SQLite เหมาะกับ Prototype/UAT และรองรับผู้ใช้ 10–20 คนได้ แต่ PostgreSQL เหมาะกว่าเมื่อ (ก) ต้องเชื่อมกับ ERP,
-(ข) ต้องการ Replication/Backup ระดับองค์กร, (ค) มีหลายระบบเขียนข้อมูลพร้อมกัน
+ระบบเคยใช้ SQLite และย้ายมาเป็น PostgreSQL/Supabase เรียบร้อยแล้ว สิ่งที่เปลี่ยนไปและควรรู้:
 
-การแปลง `server/schema.sql` → PostgreSQL:
-
-| SQLite | PostgreSQL |
+| เดิม (SQLite) | ปัจจุบัน (PostgreSQL) |
 |--------|-----------|
-| `INTEGER PRIMARY KEY AUTOINCREMENT` | `BIGSERIAL PRIMARY KEY` |
-| `TEXT` (วันเวลา) | `TIMESTAMPTZ` / `DATE` |
-| `datetime('now','localtime')` | `now()` (ตั้ง `TimeZone='Asia/Bangkok'`) |
+| `INTEGER PRIMARY KEY AUTOINCREMENT` | `INTEGER GENERATED BY DEFAULT AS IDENTITY` |
+| `TEXT` (วันเวลา) | `TIMESTAMP` / `DATE` |
+| `datetime('now','localtime')` | `(now() AT TIME ZONE 'Asia/Bangkok')` |
 | `julianday(a) - julianday(b)` | `(a::date - b::date)` |
-| `CHECK (x IN (...))` | คงเดิม หรือใช้ `ENUM` |
-| Trigger ห้าม UPDATE/DELETE | `CREATE RULE` หรือ Trigger `RAISE EXCEPTION` |
-| `INSERT ... ON CONFLICT` | เหมือนกัน |
+| `LIKE` (ไม่สนตัวพิมพ์) | `ILIKE` |
+| Trigger `RAISE(ABORT)` | Trigger + `RAISE EXCEPTION` |
+| `GROUP BY` แบบหลวม | ต้องระบุคอลัมน์ให้ครบ หรือ group ด้วย Primary Key |
 
-โค้ดที่ต้องแก้อยู่ที่ `server/lib/db.js` เท่านั้น (เปลี่ยน `all/get/run/tx` ไปใช้ไดรเวอร์ `pg`) — Service Layer ใช้ SQL มาตรฐานเป็นหลัก
+`all/get/run/tx` ใน `server/lib/db.js` ยังใช้ชื่อเดิมและรับ placeholder `?` เหมือนเดิม
+(แปลงเป็น `$1 $2` ให้อัตโนมัติ) แต่ **เปลี่ยนเป็น async ทั้งหมด** — เวลาเพิ่มโค้ดใหม่อย่าลืม `await`
 
 ## 6. การเชื่อมต่อกับ ERP (NFR-15 / M12)
 

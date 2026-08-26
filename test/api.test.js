@@ -2,10 +2,10 @@
 import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { rmSync } from 'node:fs';
-import { join } from 'node:path';
 
-const DB = join(process.cwd(), 'data', 'test.db');
+// ต้องมีฐานข้อมูล PostgreSQL สำหรับทดสอบ (อย่าชี้ไปที่ฐานข้อมูลจริง — ชุดทดสอบจะล้างข้อมูลทิ้ง)
+//   TEST_DATABASE_URL=postgresql://postgres@localhost:5432/ragtest npm test
+const DB_URL = process.env.TEST_DATABASE_URL;
 const PORT = 4123;
 const BASE = `http://localhost:${PORT}`;
 let server;
@@ -23,10 +23,12 @@ const api = async (method, path, body, tk = token) => {
 };
 
 before(async () => {
-  for (const f of [DB, `${DB}-wal`, `${DB}-shm`]) rmSync(f, { force: true });
-  execFileSync(process.execPath, ['server/seed.js'], { env: { ...process.env, RAG_DB: DB }, stdio: 'ignore' });
+  if (!DB_URL) throw new Error('ต้องตั้ง TEST_DATABASE_URL ก่อนรันชุดทดสอบ (ดูหมายเหตุด้านบนของไฟล์นี้)');
+  const env = { ...process.env, DATABASE_URL: DB_URL, RAG_ENV_FILE: '/dev/null', RAG_ALLOW_RESET: 'yes' };
+  execFileSync(process.execPath, ['server/reset.js'], { env, stdio: 'ignore' });
+  execFileSync(process.execPath, ['server/seed.js'], { env, stdio: 'ignore' });
   server = spawn(process.execPath, ['server/index.js'], {
-    env: { ...process.env, RAG_DB: DB, PORT: String(PORT), RAG_LOG: 'off' }, stdio: 'ignore',
+    env: { ...env, PORT: String(PORT), RAG_LOG: 'off' }, stdio: 'ignore',
   });
   for (let i = 0; i < 50; i++) {
     try { await fetch(BASE + '/api/dashboard'); break; } catch { await new Promise((r) => setTimeout(r, 100)); }
@@ -37,7 +39,6 @@ before(async () => {
 
 after(() => {
   server?.kill();
-  for (const f of [DB, `${DB}-wal`, `${DB}-shm`]) rmSync(f, { force: true });
 });
 
 describe('Authentication & RBAC (FR-09, NFR-12/13)', () => {

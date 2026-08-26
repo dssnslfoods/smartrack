@@ -1,32 +1,17 @@
 // Cloud Functions for Firebase — entry point
-// ทำหน้าที่ proxy HTTP request ไปยัง server ที่มีอยู่เดิม
+//
+// ตอนนี้ข้อมูลอยู่บน Supabase (PostgreSQL) แล้ว ระบบจึงไม่เก็บสถานะไว้ในเครื่อง
+// deploy ขึ้น Cloud Functions ได้โดยข้อมูลไม่หาย (ต่างจากตอนใช้ SQLite ใน /tmp)
+//
+// ต้องตั้งค่า DATABASE_URL ให้ฟังก์ชันก่อนใช้งาน เช่น
+//   firebase functions:secrets:set DATABASE_URL
+// และรัน `npm run migrate` หนึ่งครั้งเพื่อสร้างตารางบน Supabase
+import './server/lib/env.js';
 import { onRequest } from 'firebase-functions/v2/https';
-import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
-import { existsSync } from 'node:fs';
-
-// ⚠️ เลิกใช้แล้ว — อย่า deploy ระบบขึ้น Cloud Functions
-//
-// Cloud Functions เขียนไฟล์ได้เฉพาะ /tmp ซึ่งเป็นหน่วยความจำชั่วคราวประจำแต่ละ instance
-// เมื่อ instance ถูกปิด (ไม่มีคนใช้ ~15 นาที) ข้อมูลจะหายทั้งหมด แล้ว seed ใหม่ตอนเปิดครั้งถัดไป
-// ทำให้ทุกอย่างที่บันทึกไว้ย้อนกลับไปเป็นค่าตั้งต้น
-//
-// ระบบจริงต้องรันด้วย server/index.js บนเครื่องที่มีดิสก์ถาวร (ดู docs/DEPLOYMENT.md)
-if (process.env.FUNCTIONS_EMULATOR || process.env.K_SERVICE) {
-  process.env.RAG_DB = process.env.RAG_DB || '/tmp/rag.db';
-  console.error('[ร้ายแรง] กำลังรันบน Cloud Functions — ข้อมูลจะหายทุกครั้งที่ instance ถูกปิด ห้ามใช้เก็บข้อมูลจริง');
-}
 
 import { routes, csvExports } from './server/api/routes.js';
-import { HttpError, json, readBody, notFound } from './server/lib/http.js';
+import { HttpError, notFound } from './server/lib/http.js';
 import { userFromRequest, requirePerm } from './server/lib/auth.js';
-import { db, get } from './server/lib/db.js';
-
-// Auto-seed ถ้าฐานข้อมูลว่างเปล่า
-if (!get('SELECT COUNT(*) AS n FROM users').n) {
-  await import('./server/seed.js');
-}
 
 const compiled = routes.map(([method, path, perm, handler]) => ({
   method, perm, handler,
@@ -49,10 +34,8 @@ function match(method, pathname) {
   return null;
 }
 
-const int = (v, def) => { const n = Number(v); return Number.isFinite(n) ? n : def ?? null; };
-
 export const api = onRequest(
-  { region: 'asia-southeast1', memory: '512MiB', timeoutSeconds: 60 },
+  { region: 'asia-southeast1', memory: '512MiB', timeoutSeconds: 60, secrets: ['DATABASE_URL'] },
   async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const query = Object.fromEntries(url.searchParams);
@@ -70,11 +53,11 @@ export const api = onRequest(
       // CSV exports
       const csvMatch = url.pathname.match(/^\/api\/export\/([a-z]+)\.csv$/);
       if (csvMatch && req.method === 'GET') {
-        const user = userFromRequest(req);
+        const user = await userFromRequest(req);
         requirePerm(user, 'view');
         const exporter = csvExports[csvMatch[1]];
         if (!exporter) throw notFound('ไม่พบข้อมูล');
-        const { filename, body } = exporter(query);
+        const { filename, body } = await exporter(query);
         res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${filename}"` });
         return res.end(body);
       }
@@ -82,7 +65,7 @@ export const api = onRequest(
       const hit = match(req.method, url.pathname);
       if (!hit) throw notFound(`ไม่พบ endpoint ${req.method} ${url.pathname}`);
 
-      const user = userFromRequest(req);
+      const user = await userFromRequest(req);
       if (hit.route.perm) requirePerm(user, hit.route.perm);
       const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : {};
       const result = await hit.route.handler({ req, res, params: hit.params, query, body, user });

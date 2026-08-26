@@ -12,13 +12,14 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js",
-    "reset": "rm -f data/rag.db && node server/seed.js",
+    "reset": "node server/reset.js",
     "test": "node --test test/*.test.js",
-    "backup": "node server/backup.js"
+    "migrate": "node server/migrate.js"
   },
   "dependencies": {
     "bwip-js": "^4.11.4",
     "firebase-admin": "^14.3.0",
-    "firebase-functions": "^7.3.2"
+    "firebase-functions": "^7.3.2",
+    "pg": "^8.23.0"
   }
 }

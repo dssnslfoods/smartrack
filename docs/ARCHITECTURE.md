@@ -21,7 +21,7 @@
 │  locations · suggest · search · operations · cyclecount      │
 │  · reports · labels · notify                                 │
 ├──────────────────────────────────────────────────────────────┤
-│  Data Layer (SQLite → PostgreSQL)                            │
+│  Data Layer (PostgreSQL — Supabase)                          │
 │  · Constraint + Trigger บังคับกฎที่ห้ามละเมิดเด็ดขาด            │
 └──────────────────────────────────────────────────────────────┘
 ```

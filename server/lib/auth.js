@@ -35,24 +35,24 @@ export function requirePerm(user, perm) {
   return user;
 }
 
-export function login({ username, password }) {
-  const user = get('SELECT * FROM users WHERE username = ? AND status = ?', String(username ?? ''), 'ACTIVE');
+export async function login({ username, password }) {
+  const user = await get('SELECT * FROM users WHERE username = ? AND status = ?', String(username ?? ''), 'ACTIVE');
   if (!user || !verifySecret(String(password ?? ''), user.password_hash))
     throw unauthorized('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
 
   const token = randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + SESSION_HOURS * 3600_000).toISOString().slice(0, 19).replace('T', ' ');
-  run('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)', token, user.user_id, expires);
-  run('DELETE FROM sessions WHERE expires_at <= ?', nowStr());
+  await run('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)', token, user.user_id, expires);
+  await run('DELETE FROM sessions WHERE expires_at <= ?', nowStr());
   return { token, user: publicUser(user) };
 }
 
-export const logout = (token) => token && run('DELETE FROM sessions WHERE token = ?', token);
+export const logout = async (token) => token && await run('DELETE FROM sessions WHERE token = ?', token);
 
-export function userFromRequest(req) {
+export async function userFromRequest(req) {
   const header = req.headers['authorization'] ?? '';
   if (!header.startsWith('Bearer ')) return null;
-  const row = get(
+  const row = await get(
     `SELECT u.* FROM sessions s JOIN users u ON u.user_id = s.user_id
       WHERE s.token = ? AND s.expires_at > ? AND u.status = 'ACTIVE'`,
     header.slice(7), nowStr(),
@@ -69,5 +69,5 @@ export const publicUser = (u) => ({
   permissions: PERMISSIONS[u.role],
 });
 
-export const listUsers = () =>
-  all('SELECT user_id, username, full_name, role, status, created_at FROM users ORDER BY user_id');
+export const listUsers = async () =>
+  await all('SELECT user_id, username, full_name, role, status, created_at FROM users ORDER BY user_id');

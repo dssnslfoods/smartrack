@@ -11,8 +11,8 @@ import { locationLabels } from '../services/labels.js';
 /** [method, path, สิทธิ์ที่ต้องมี (null = ไม่ต้องล็อกอิน), handler] */
 export const routes = [
   // ---------------- เข้าสู่ระบบ ----------------
-  ['POST', '/api/auth/login', null, ({ body }) => login(body)],
-  ['POST', '/api/auth/logout', 'view', ({ req }) => { logout((req.headers.authorization ?? '').slice(7)); return { ok: true }; }],
+  ['POST', '/api/auth/login', null, async ({ body }) => await login(body)],
+  ['POST', '/api/auth/logout', 'view', async ({ req }) => { await logout((req.headers.authorization ?? '').slice(7)); return { ok: true }; }],
   ['GET', '/api/auth/me', 'view', ({ user }) => user],
 
   // ---------------- หน้าแรก / ค้นหา ----------------
@@ -30,17 +30,17 @@ export const routes = [
 
   // ---------------- แผนผังคลัง ----------------
   ['GET', '/api/overview', 'view', ({ query }) => inv.warehouseOverview({ warehouseId: int(query.warehouse_id) })],
-  ['GET', '/api/rags/:id/map', 'view', ({ params }) => rackMap(+params.id)],
-  ['GET', '/api/locations', 'view', ({ query }) =>
-    emptyLocations({ zoneId: int(query.zone_id), ragId: int(query.rag_id), limit: int(query.limit, 300) })],
+  ['GET', '/api/rags/:id/map', 'view', async ({ params }) => await rackMap(+params.id)],
+  ['GET', '/api/locations', 'view', async ({ query }) =>
+    await emptyLocations({ zoneId: int(query.zone_id), ragId: int(query.rag_id), limit: int(query.limit, 300) })],
   ['GET', '/api/locations/:code', 'view', ({ params }) => inv.locationDetail(decodeURIComponent(params.code))],
-  ['PATCH', '/api/locations/:id', 'manage', ({ params, body }) => {
-    const loc = get('SELECT * FROM locations WHERE location_id = ?', +params.id);
+  ['PATCH', '/api/locations/:id', 'manage', async ({ params, body }) => {
+    const loc = await get('SELECT * FROM locations WHERE location_id = ?', +params.id);
     if (!loc) throw notFound('ไม่พบตำแหน่ง');
     if (loc.status === 'OCCUPIED') throw conflict('เปลี่ยนสถานะไม่ได้ — ยังมีสินค้าอยู่ในตำแหน่งนี้');
     if (!['EMPTY', 'DISABLED'].includes(body.status)) throw badRequest('สถานะไม่ถูกต้อง');
-    run('UPDATE locations SET status = ? WHERE location_id = ?', body.status, +params.id);
-    return get('SELECT * FROM locations WHERE location_id = ?', +params.id);
+    await run('UPDATE locations SET status = ? WHERE location_id = ?', body.status, +params.id);
+    return await get('SELECT * FROM locations WHERE location_id = ?', +params.id);
   }],
 
   // ---------------- จัดเก็บ / หยิบออก / ย้าย ----------------
@@ -71,42 +71,42 @@ export const routes = [
   ['DELETE', '/api/zones/:id', 'manage', ({ params }) => wh.deleteZone(+params.id)],
 
   // ---------------- ข้อมูลหลัก: โซน ----------------
-  ['GET', '/api/zones', 'view', ({ query }) =>
-    all(`SELECT z.*, w.wh_code, w.wh_name,
+  ['GET', '/api/zones', 'view', async ({ query }) =>
+    await all(`SELECT z.*, w.wh_code, w.wh_name,
                 (SELECT COUNT(*) FROM rags r WHERE r.zone_id = z.zone_id) AS rag_count
            FROM zones z LEFT JOIN warehouses w ON w.warehouse_id = z.warehouse_id
           ${query.warehouse_id ? 'WHERE z.warehouse_id = ?' : ''}
           ORDER BY w.wh_code, z.zone_code`,
       ...(query.warehouse_id ? [int(query.warehouse_id)] : []))],
-  ['POST', '/api/zones', 'manage', ({ body }) => {
+  ['POST', '/api/zones', 'manage', async ({ body }) => {
     requireFields(body, ['zone_code', 'zone_name', 'warehouse_id']);
-    if (get('SELECT 1 FROM zones WHERE zone_code = ?', body.zone_code.toUpperCase()))
+    if (await get('SELECT 1 FROM zones WHERE zone_code = ?', body.zone_code.toUpperCase()))
       throw conflict('รหัสโซนนี้ถูกใช้แล้ว — รหัสโซนต้องไม่ซ้ำกันทุกคลัง');
-    if (!get('SELECT 1 FROM warehouses WHERE warehouse_id = ?', +body.warehouse_id)) throw notFound('ไม่พบคลังสินค้า');
-    const r = run('INSERT INTO zones (zone_code, zone_name, warehouse_id, color) VALUES (?,?,?,?)',
+    if (!await get('SELECT 1 FROM warehouses WHERE warehouse_id = ?', +body.warehouse_id)) throw notFound('ไม่พบคลังสินค้า');
+    const r = await run('INSERT INTO zones (zone_code, zone_name, warehouse_id, color) VALUES (?,?,?,?)',
       body.zone_code.toUpperCase(), body.zone_name, +body.warehouse_id, body.color || '#2563eb');
-    return get('SELECT * FROM zones WHERE zone_id = ?', Number(r.lastInsertRowid));
+    return await get('SELECT * FROM zones WHERE zone_id = ?', Number(r.lastInsertRowid));
   }],
-  ['PUT', '/api/zones/:id', 'manage', ({ params, body }) => {
-    const z = get('SELECT * FROM zones WHERE zone_id = ?', +params.id);
+  ['PUT', '/api/zones/:id', 'manage', async ({ params, body }) => {
+    const z = await get('SELECT * FROM zones WHERE zone_id = ?', +params.id);
     if (!z) throw notFound('ไม่พบโซน');
     const code = (body.zone_code ?? z.zone_code).toUpperCase();
-    if (get('SELECT 1 FROM zones WHERE zone_code = ? AND zone_id <> ?', code, +params.id))
+    if (await get('SELECT 1 FROM zones WHERE zone_code = ? AND zone_id <> ?', code, +params.id))
       throw conflict('รหัสโซนนี้ถูกใช้แล้ว — รหัสโซนต้องไม่ซ้ำกันทุกคลัง');
-    run('UPDATE zones SET zone_code=?, zone_name=?, warehouse_id=?, color=?, status=? WHERE zone_id=?',
+    await run('UPDATE zones SET zone_code=?, zone_name=?, warehouse_id=?, color=?, status=? WHERE zone_id=?',
       code, body.zone_name ?? z.zone_name, body.warehouse_id ? +body.warehouse_id : z.warehouse_id,
       body.color ?? z.color, body.status ?? z.status, +params.id);
-    for (const r of all('SELECT rag_id FROM rags WHERE zone_id = ?', +params.id)) syncRagLocations(r.rag_id);
-    return get('SELECT * FROM zones WHERE zone_id = ?', +params.id);
+    for (const r of await all('SELECT rag_id FROM rags WHERE zone_id = ?', +params.id)) await syncRagLocations(r.rag_id);
+    return await get('SELECT * FROM zones WHERE zone_id = ?', +params.id);
   }],
 
   // ---------------- ข้อมูลหลัก: ชั้นวาง ----------------
-  ['GET', '/api/rags', 'view', ({ query }) => {
+  ['GET', '/api/rags', 'view', async ({ query }) => {
     const where = [];
     const params = [];
     if (query.zone_id) { where.push('r.zone_id = ?'); params.push(int(query.zone_id)); }
     if (query.warehouse_id) { where.push('z.warehouse_id = ?'); params.push(int(query.warehouse_id)); }
-    return all(
+    return await all(
       `SELECT r.*, z.zone_code, z.zone_name, z.color, w.warehouse_id, w.wh_code, w.wh_name,
               (SELECT COUNT(*) FROM locations l WHERE l.rag_id = r.rag_id) AS total_locations,
               (SELECT COUNT(*) FROM locations l WHERE l.rag_id = r.rag_id AND l.status='OCCUPIED') AS occupied
@@ -116,72 +116,72 @@ export const routes = [
         ORDER BY w.wh_code, z.zone_code, r.rag_no`,
       ...params);
   }],
-  ['POST', '/api/rags', 'manage', ({ body }) => {
+  ['POST', '/api/rags', 'manage', async ({ body }) => {
     requireFields(body, ['rag_no', 'zone_id', 'total_levels', 'total_depths']);
     const no = String(body.rag_no).trim().toUpperCase();
-    if (get('SELECT 1 FROM rags WHERE rag_no = ?', no)) throw conflict('หมายเลขชั้นวางนี้ถูกใช้แล้ว');
-    const ragId = tx(() => Number(run(
+    if (await get('SELECT 1 FROM rags WHERE rag_no = ?', no)) throw conflict('หมายเลขชั้นวางนี้ถูกใช้แล้ว');
+    const ragId = await tx(async () => Number((await run(
       'INSERT INTO rags (rag_no, zone_id, total_levels, total_depths, note, pos_x, pos_y) VALUES (?,?,?,?,?,?,?)',
       no, body.zone_id, body.total_levels, body.total_depths, body.note ?? null,
       body.pos_x ?? null, body.pos_y ?? null,
-    ).lastInsertRowid));
-    return { rag: get('SELECT * FROM rags WHERE rag_id = ?', ragId), ...syncRagLocations(ragId) };
+    )).lastInsertRowid));
+    return { rag: await get('SELECT * FROM rags WHERE rag_id = ?', ragId), ...await syncRagLocations(ragId) };
   }],
-  ['PUT', '/api/rags/:id', 'manage', ({ params, body }) => {
-    const rag = get('SELECT * FROM rags WHERE rag_id = ?', +params.id);
+  ['PUT', '/api/rags/:id', 'manage', async ({ params, body }) => {
+    const rag = await get('SELECT * FROM rags WHERE rag_id = ?', +params.id);
     if (!rag) throw notFound('ไม่พบชั้นวาง');
-    run(`UPDATE rags SET rag_no=?, zone_id=?, total_levels=?, total_depths=?, note=?, status=? WHERE rag_id=?`,
+    await run(`UPDATE rags SET rag_no=?, zone_id=?, total_levels=?, total_depths=?, note=?, status=? WHERE rag_id=?`,
       String(body.rag_no ?? rag.rag_no).toUpperCase(), body.zone_id ?? rag.zone_id,
       body.total_levels ?? rag.total_levels, body.total_depths ?? rag.total_depths,
       body.note ?? rag.note, body.status ?? rag.status, +params.id);
-    return { rag: get('SELECT * FROM rags WHERE rag_id = ?', +params.id), ...syncRagLocations(+params.id) };
+    return { rag: await get('SELECT * FROM rags WHERE rag_id = ?', +params.id), ...await syncRagLocations(+params.id) };
   }],
 
   // ---------------- ข้อมูลหลัก: สินค้า ----------------
-  ['GET', '/api/skus', 'view', ({ query }) => {
+  ['GET', '/api/skus', 'view', async ({ query }) => {
     const q = (query.q ?? '').trim();
     const whId = int(query.warehouse_id);
     // จำนวนคงคลังนับตามคลังที่เลือกอยู่ เพื่อให้ตัวเลขตรงกับหน้าจออื่น
     const scope = whId ? 'AND v.warehouse_id = ?' : '';
     const scopeParams = whId ? [whId] : [];
-    return all(
+    return await all(
       `SELECT s.*,
               (SELECT COUNT(*) FROM v_stock v WHERE v.sku_id = s.sku_id ${scope}) AS locations_used,
               (SELECT COALESCE(SUM(v.quantity),0) FROM v_stock v WHERE v.sku_id = s.sku_id ${scope}) AS qty_in_stock
-         FROM skus s ${q ? 'WHERE s.sku_code LIKE ? OR s.sku_name LIKE ? OR s.barcode = ?' : ''}
+         FROM skus s ${q ? 'WHERE s.sku_code ILIKE ? OR s.sku_name ILIKE ? OR s.barcode = ?' : ''}
         ORDER BY s.sku_code`,
       ...scopeParams, ...scopeParams, ...(q ? [`%${q}%`, `%${q}%`, q] : []));
   }],
-  ['POST', '/api/skus', 'manage', ({ body }) => {
+  ['POST', '/api/skus', 'manage', async ({ body }) => {
     requireFields(body, ['sku_code', 'sku_name']);
-    if (get('SELECT 1 FROM skus WHERE sku_code = ?', body.sku_code)) throw conflict('รหัสสินค้านี้ถูกใช้แล้ว');
-    const r = run('INSERT INTO skus (sku_code, sku_name, category, unit, barcode) VALUES (?,?,?,?,?)',
+    if (await get('SELECT 1 FROM skus WHERE sku_code = ?', body.sku_code)) throw conflict('รหัสสินค้านี้ถูกใช้แล้ว');
+    const r = await run('INSERT INTO skus (sku_code, sku_name, category, unit, barcode) VALUES (?,?,?,?,?)',
       body.sku_code.trim(), body.sku_name.trim(), body.category ?? null, body.unit || 'ชิ้น', body.barcode ?? null);
-    return get('SELECT * FROM skus WHERE sku_id = ?', Number(r.lastInsertRowid));
+    return await get('SELECT * FROM skus WHERE sku_id = ?', Number(r.lastInsertRowid));
   }],
-  ['PUT', '/api/skus/:id', 'manage', ({ params, body }) => {
-    const s = get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
+  ['PUT', '/api/skus/:id', 'manage', async ({ params, body }) => {
+    const s = await get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
     if (!s) throw notFound('ไม่พบสินค้า');
-    run('UPDATE skus SET sku_code=?, sku_name=?, category=?, unit=?, barcode=?, status=? WHERE sku_id=?',
+    await run('UPDATE skus SET sku_code=?, sku_name=?, category=?, unit=?, barcode=?, status=? WHERE sku_id=?',
       body.sku_code ?? s.sku_code, body.sku_name ?? s.sku_name, body.category ?? s.category,
       body.unit ?? s.unit, body.barcode ?? s.barcode, body.status ?? s.status, +params.id);
-    return get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
+    return await get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
   }],
 
   // ---------------- ผู้ใช้งาน ----------------
-  ['GET', '/api/users', 'manage', () => listUsers()],
-  ['POST', '/api/users', 'manage', ({ body }) => {
+  ['GET', '/api/users', 'manage', async () => await listUsers()],
+  ['POST', '/api/users', 'manage', async ({ body }) => {
     requireFields(body, ['username', 'full_name', 'role', 'password']);
     if (!PERMISSIONS[body.role]) throw badRequest('บทบาทไม่ถูกต้อง');
-    if (get('SELECT 1 FROM users WHERE username = ?', body.username)) throw conflict('ชื่อผู้ใช้นี้ถูกใช้แล้ว');
-    const r = run('INSERT INTO users (username, full_name, role, password_hash) VALUES (?,?,?,?)',
+    if (await get('SELECT 1 FROM users WHERE username = ?', body.username)) throw conflict('ชื่อผู้ใช้นี้ถูกใช้แล้ว');
+    const r = await run('INSERT INTO users (username, full_name, role, password_hash) VALUES (?,?,?,?)',
       body.username.trim(), body.full_name.trim(), body.role, hashSecret(body.password));
     return { user_id: Number(r.lastInsertRowid) };
   }],
-  ['PUT', '/api/users/:id', 'manage', ({ params, body }) => {
-    const u = get('SELECT * FROM users WHERE user_id = ?', +params.id);
+  ['PUT', '/api/users/:id', 'manage', async ({ params, body }) => {
+    const u = await get('SELECT * FROM users WHERE user_id = ?', +params.id);
     if (!u) throw notFound('ไม่พบผู้ใช้');
-    run('UPDATE users SET full_name=?, role=?, status=?, password_hash=? WHERE user_id=?',
+    await run('UPDATE users SET full_name=?, role=?, status=?, password_hash=? WHERE user_id=?',
       body.full_name ?? u.full_name, body.role ?? u.role, body.status ?? u.status,
       body.password ? hashSecret(body.password) : u.password_hash, +params.id);
     return { ok: true };
@@ -214,9 +214,9 @@ function requireFields(body, fields) {
 
 /** ไฟล์ CSV สำหรับเปิดใน Excel */
 export const csvExports = {
-  stock: (query) => ({
+  stock: async (query) => ({
     filename: `stock_${new Date().toISOString().slice(0, 10)}.csv`,
-    body: inv.toCSV(inv.searchStock(query.q, { ...stockFilter(query), limit: 5000 }), [
+    body: inv.toCSV(await inv.searchStock(query.q, { ...stockFilter(query), limit: 5000 }), [
       { label: 'ตำแหน่ง', key: 'location_code' }, { label: 'โซน', key: 'zone_code' }, { label: 'ชั้นวาง', key: 'rag_no' },
       { label: 'ชั้น', key: 'level' }, { label: 'ตอน', key: 'depth' },
       { label: 'รหัสสินค้า', key: 'sku_code' }, { label: 'ชื่อสินค้า', key: 'sku_name' },
@@ -224,8 +224,8 @@ export const csvExports = {
       { label: 'วันหมดอายุ', key: 'exp_date' }, { label: 'จัดเก็บเมื่อ', key: 'stored_at' },
     ]),
   }),
-  picklist: (query) => {
-    const plan = inv.pickPlan({
+  picklist: async (query) => {
+    const plan = await inv.pickPlan({
       sku_id: int(query.sku_id), quantity: int(query.quantity),
       min_days: int(query.min_days), max_days: int(query.max_days),
       warehouse_id: int(query.warehouse_id), zone_id: int(query.zone_id), strategy: query.strategy,
@@ -246,9 +246,9 @@ export const csvExports = {
       ]),
     };
   },
-  movements: (query) => ({
+  movements: async (query) => ({
     filename: `movements_${new Date().toISOString().slice(0, 10)}.csv`,
-    body: inv.toCSV(inv.listMovements({ ...query, limit: 5000 }), [
+    body: inv.toCSV(await inv.listMovements({ ...query, limit: 5000 }), [
       { label: 'เลขที่', key: 'movement_id' },
       { label: 'ประเภท', value: (r) => ({ STORE: 'จัดเก็บ', REMOVE: 'หยิบออก', MOVE: 'ย้าย', EDIT: 'แก้ไข' }[r.movement_type]) },
       { label: 'วันเวลา', key: 'moved_at' }, { label: 'รหัสสินค้า', key: 'sku_code' }, { label: 'ชื่อสินค้า', key: 'sku_name' },

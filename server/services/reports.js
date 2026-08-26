@@ -3,12 +3,12 @@ import { all, get } from '../lib/db.js';
 import { expiryState } from './locations.js';
 
 /** 1. สรุปสินค้าคงคลัง */
-export function inventorySummary({ group_by = 'sku', warehouseId = null } = {}) {
+export async function inventorySummary({ group_by = 'sku', warehouseId = null } = {}) {
   const whJoin = warehouseId ? ' JOIN rags rw ON rw.rag_id = l.rag_id JOIN zones zw ON zw.zone_id = rw.zone_id' : '';
   const whWhere = warehouseId ? ' AND zw.warehouse_id = ?' : '';
   const whParams = warehouseId ? [warehouseId] : [];
   if (group_by === 'zone') {
-    return all(
+    return await all(
       `SELECT z.zone_code, z.zone_name,
               COUNT(DISTINCT i.item_id) AS items,
               COUNT(DISTINCT i.sku_id) AS sku_count,
@@ -22,7 +22,7 @@ export function inventorySummary({ group_by = 'sku', warehouseId = null } = {}) 
         GROUP BY z.zone_id ORDER BY z.zone_code`, ...whParams);
   }
   if (group_by === 'category') {
-    return all(
+    return await all(
       `SELECT COALESCE(s.category, 'ไม่ระบุ') AS category,
               COUNT(DISTINCT i.item_id) AS items,
               COUNT(DISTINCT s.sku_id) AS sku_count,
@@ -32,7 +32,7 @@ export function inventorySummary({ group_by = 'sku', warehouseId = null } = {}) 
         WHERE i.status = 'IN_STOCK'${whWhere}
         GROUP BY s.category ORDER BY total_qty DESC`, ...whParams);
   }
-  return all(
+  return await all(
     `SELECT s.sku_code, s.sku_name, s.category, s.unit,
             COUNT(i.item_id) AS locations_used,
             COALESCE(SUM(i.quantity), 0) AS total_qty,
@@ -44,11 +44,11 @@ export function inventorySummary({ group_by = 'sku', warehouseId = null } = {}) 
 }
 
 /** 2. สินค้าใกล้หมดอายุ */
-export function expiryReport({ warehouseId = null } = {}) {
-  const rows = all(
+export async function expiryReport({ warehouseId = null } = {}) {
+  const rows = await all(
     `SELECT i.item_id, s.sku_code, s.sku_name, s.unit, i.lot_no, i.quantity,
             i.exp_date, l.location_code, z.zone_code,
-            CAST(julianday(i.exp_date) - julianday(date('now','localtime')) AS INTEGER) AS days_left
+            (i.exp_date::date - (now() AT TIME ZONE 'Asia/Bangkok')::date) AS days_left
        FROM stock_items i
        JOIN skus s ON s.sku_id = i.sku_id
        JOIN locations l ON l.location_id = i.location_id
@@ -81,8 +81,8 @@ export function expiryReport({ warehouseId = null } = {}) {
 }
 
 /** 3. ประสิทธิภาพการใช้พื้นที่ */
-export function spaceUtilization({ warehouseId = null } = {}) {
-  const racks = all(
+export async function spaceUtilization({ warehouseId = null } = {}) {
+  const racks = await all(
     `SELECT r.rag_id, r.rag_no, z.zone_code, z.zone_name,
             COUNT(l.location_id) AS total,
             SUM(CASE WHEN l.status='OCCUPIED' THEN 1 ELSE 0 END) AS occupied,
@@ -91,7 +91,7 @@ export function spaceUtilization({ warehouseId = null } = {}) {
        FROM rags r JOIN zones z ON z.zone_id = r.zone_id
        LEFT JOIN locations l ON l.rag_id = r.rag_id
       ${warehouseId ? 'WHERE z.warehouse_id = ?' : ''}
-      GROUP BY r.rag_id ORDER BY z.zone_code, r.rag_no`, ...(warehouseId ? [warehouseId] : []));
+      GROUP BY r.rag_id, z.zone_id ORDER BY z.zone_code, r.rag_no`, ...(warehouseId ? [warehouseId] : []));
 
   for (const r of racks) {
     r.usable = r.total - r.disabled;
@@ -117,7 +117,7 @@ export function spaceUtilization({ warehouseId = null } = {}) {
 }
 
 /** 4. วิเคราะห์การเคลื่อนไหว */
-export function movementAnalytics({ days = 30, warehouseId = null } = {}) {
+export async function movementAnalytics({ days = 30, warehouseId = null } = {}) {
   const cutoff = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
   const mWhJoin = warehouseId
     ? ` JOIN locations lw ON lw.location_id = COALESCE(m.to_location_id, m.from_location_id)
@@ -126,28 +126,28 @@ export function movementAnalytics({ days = 30, warehouseId = null } = {}) {
   const mWhWhere = warehouseId ? ' AND zw.warehouse_id = ?' : '';
   const mWhP = warehouseId ? [warehouseId] : [];
 
-  const byType = all(
+  const byType = await all(
     `SELECT m.movement_type, COUNT(*) AS count, COALESCE(SUM(m.quantity), 0) AS total_qty
        FROM movements m${mWhJoin} WHERE m.moved_at >= ?${mWhWhere} GROUP BY m.movement_type`, cutoff, ...mWhP);
 
-  const byDay = all(
-    `SELECT date(m.moved_at) AS day, m.movement_type, COUNT(*) AS count
+  const byDay = await all(
+    `SELECT m.moved_at::date AS day, m.movement_type, COUNT(*) AS count
        FROM movements m${mWhJoin} WHERE m.moved_at >= ?${mWhWhere}
       GROUP BY day, m.movement_type ORDER BY day`, cutoff, ...mWhP);
 
-  const topMoving = all(
+  const topMoving = await all(
     `SELECT s.sku_code, s.sku_name, s.unit, COUNT(*) AS move_count,
             COALESCE(SUM(m.quantity), 0) AS total_qty
        FROM movements m JOIN skus s ON s.sku_id = m.sku_id${mWhJoin}
       WHERE m.moved_at >= ?${mWhWhere}
-      GROUP BY m.sku_id ORDER BY move_count DESC LIMIT 10`, cutoff, ...mWhP);
+      GROUP BY s.sku_id ORDER BY move_count DESC LIMIT 10`, cutoff, ...mWhP);
 
   const sWhJoin = warehouseId ? ' JOIN rags rw ON rw.rag_id = l.rag_id JOIN zones zw ON zw.zone_id = rw.zone_id' : '';
   const sWhWhere = warehouseId ? ' AND zw.warehouse_id = ?' : '';
-  const slowMoving = all(
+  const slowMoving = await all(
     `SELECT s.sku_code, s.sku_name, s.unit, i.lot_no, i.quantity,
             l.location_code, i.stored_at,
-            CAST(julianday('now','localtime') - julianday(i.stored_at) AS INTEGER) AS days_stored
+            ((now() AT TIME ZONE 'Asia/Bangkok')::date - i.stored_at::date) AS days_stored
        FROM stock_items i
        JOIN skus s ON s.sku_id = i.sku_id
        JOIN locations l ON l.location_id = i.location_id${sWhJoin}
@@ -161,7 +161,7 @@ export function movementAnalytics({ days = 30, warehouseId = null } = {}) {
 }
 
 /** 5. ประสิทธิภาพพนักงาน */
-export function staffPerformance({ days = 30, warehouseId = null } = {}) {
+export async function staffPerformance({ days = 30, warehouseId = null } = {}) {
   const cutoff = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
   const whJoin = warehouseId
     ? ` JOIN locations lw ON lw.location_id = COALESCE(m.to_location_id, m.from_location_id)
@@ -170,7 +170,7 @@ export function staffPerformance({ days = 30, warehouseId = null } = {}) {
   const whWhere = warehouseId ? ' AND zw.warehouse_id = ?' : '';
   const whP = warehouseId ? [warehouseId] : [];
 
-  const byUser = all(
+  const byUser = await all(
     `SELECT u.user_id, u.full_name, u.role,
             COUNT(*) AS total_actions,
             SUM(CASE WHEN m.movement_type='STORE' THEN 1 ELSE 0 END) AS stores,
@@ -180,13 +180,13 @@ export function staffPerformance({ days = 30, warehouseId = null } = {}) {
             COALESCE(SUM(m.quantity), 0) AS total_qty
        FROM movements m JOIN users u ON u.user_id = m.user_id${whJoin}
       WHERE m.moved_at >= ?${whWhere}
-      GROUP BY m.user_id ORDER BY total_actions DESC`, cutoff, ...whP);
+      GROUP BY u.user_id ORDER BY total_actions DESC`, cutoff, ...whP);
 
-  const byUserDay = all(
-    `SELECT u.full_name, date(m.moved_at) AS day, COUNT(*) AS count
+  const byUserDay = await all(
+    `SELECT u.full_name, m.moved_at::date AS day, COUNT(*) AS count
        FROM movements m JOIN users u ON u.user_id = m.user_id${whJoin}
       WHERE m.moved_at >= ?${whWhere}
-      GROUP BY m.user_id, day ORDER BY u.full_name, day`, cutoff, ...whP);
+      GROUP BY u.user_id, day ORDER BY u.full_name, day`, cutoff, ...whP);
 
   return { days, byUser, byUserDay };
 }
