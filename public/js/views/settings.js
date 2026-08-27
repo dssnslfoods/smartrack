@@ -230,7 +230,20 @@ export async function settingsView() {
   function skuForm(s) {
     const code = h('input', { value: s?.sku_code ?? '' });
     const name = h('input', { value: s?.sku_name ?? '' });
-    const cat = h('input', { value: s?.category ?? '', placeholder: 'เช่น สินค้าสำเร็จรูป' });
+    const cat = h('select', {}, h('option', { value: '' }, '-- เลือกหมวดหมู่ --'));
+    const catCustom = h('input', { placeholder: 'พิมพ์หมวดหมู่ใหม่', style: 'display:none;margin-top:6px' });
+    (async () => {
+      try {
+        const cats = await api.get('/api/skus/categories');
+        cats.forEach(c => cat.appendChild(h('option', { value: c, selected: s?.category === c }, c)));
+      } catch {}
+      cat.appendChild(h('option', { value: '__other__' }, 'อื่น ๆ (พิมพ์เอง)'));
+      if (s?.category && !cat.querySelector(`option[value="${CSS.escape(s.category)}"]`)) {
+        const opt = h('option', { value: s.category, selected: true }, s.category);
+        cat.insertBefore(opt, cat.lastElementChild);
+      }
+    })();
+    cat.onchange = () => { catCustom.style.display = cat.value === '__other__' ? '' : 'none'; };
     const unit = h('input', { value: s?.unit ?? 'ชิ้น' });
     const barcode = h('input', { value: s?.barcode ?? '', placeholder: 'บาร์โค้ดสินค้า (ถ้ามี)' });
     const status = s ? h('select', {},
@@ -240,7 +253,7 @@ export async function settingsView() {
     const m = modal(s ? 'แก้ไขสินค้า' : 'เพิ่มสินค้าใหม่',
       h('div', {},
         h('div', { class: 'grid g2' }, field('รหัสสินค้า', code), field('ชื่อสินค้า', name)),
-        h('div', { class: 'grid g2' }, field('หมวดหมู่', cat), field('หน่วยนับ', unit)),
+        h('div', { class: 'grid g2' }, field('หมวดหมู่', h('div', {}, cat, catCustom)), field('หน่วยนับ', unit)),
         field('บาร์โค้ด', barcode),
         status ? field('สถานะ', status) : null),
       [
@@ -249,7 +262,7 @@ export async function settingsView() {
           try {
             const body = {
               sku_code: code.value.trim(), sku_name: name.value.trim(),
-              category: cat.value.trim() || null, unit: unit.value.trim() || 'ชิ้น',
+              category: (cat.value === '__other__' ? catCustom.value.trim() : cat.value) || null, unit: unit.value.trim() || 'ชิ้น',
               barcode: barcode.value.trim() || null, ...(status ? { status: status.value } : {}),
             };
             s ? await api.put(`/api/skus/${s.sku_id}`, body) : await api.post('/api/skus', body);

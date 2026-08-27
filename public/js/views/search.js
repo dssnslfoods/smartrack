@@ -108,8 +108,33 @@ export async function searchView({ params }) {
     } else {
       // ถ้ากำลังกรองอยู่ การบอกว่า "ตำแหน่งนี้ว่าง" จะทำให้เข้าใจผิด — ข้ามไป
       const locEl = filtered ? null : await checkEmptyLocation(q);
-      if (locEl) summary.textContent = `พบตำแหน่ง "${q}" ในระบบ`;
-      results.replaceChildren(locEl || h('div', { class: 'empty-state' },
+      if (locEl) { summary.textContent = `พบตำแหน่ง "${q}" ในระบบ`; results.replaceChildren(locEl); return; }
+
+      // ค้นจาก SKU Master — แม้ไม่มีสต๊อกในคลัง ก็แสดงข้อมูลสินค้าได้
+      if (q && !filtered) {
+        try {
+          const skus = await api.get('/api/skus', { q, warehouse_id: wh.id });
+          if (skus.length) {
+            summary.textContent = `ไม่พบสินค้า "${q}" ในคลัง — แต่พบข้อมูลสินค้าที่ตรงกัน ${skus.length} รายการ`;
+            results.replaceChildren(
+              h('div', { class: 'card', style: 'margin-top:8px;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px' },
+                h('div', { style: 'font-weight:600;margin-bottom:4px' }, '⚠️ สินค้าเหล่านี้มีในระบบแต่ยังไม่มีสต๊อกในคลังที่เลือก')),
+              table([
+                { label: 'รหัสสินค้า', key: 'sku_code', mono: true },
+                { label: 'ชื่อสินค้า', key: 'sku_name' },
+                { label: 'หมวดหมู่', value: (r) => r.category || '—' },
+                { label: 'หน่วยนับ', key: 'unit' },
+                { label: 'บาร์โค้ด', value: (r) => r.barcode || '—', mono: true },
+                { label: 'ตำแหน่งที่ใช้', value: (r) => fmtNum(r.locations_used), num: true },
+                { label: 'จำนวนรวม', value: (r) => `${fmtNum(r.qty_in_stock)} ${r.unit}`, num: true },
+                { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
+              ], skus));
+            return;
+          }
+        } catch {}
+      }
+
+      results.replaceChildren(h('div', { class: 'empty-state' },
         h('p', {}, `ไม่พบสินค้าที่ตรงกับ "${q}"`),
         h('p', { style: 'font-size:13px' },
           filtered ? 'ลองผ่อนเงื่อนไขตัวกรอง หรือกด "ล้างตัวกรอง"' : 'ลองพิมพ์ชื่อสินค้าบางส่วน, รหัสสินค้า, Lot หรือรหัสตำแหน่ง')));

@@ -138,6 +138,10 @@ export const routes = [
   }],
 
   // ---------------- ข้อมูลหลัก: สินค้า ----------------
+  ['GET', '/api/skus/categories', 'view', async () => {
+    const rows = await all("SELECT DISTINCT category FROM skus WHERE category IS NOT NULL AND category != '' ORDER BY category");
+    return rows.map(r => r.category);
+  }],
   ['GET', '/api/skus', 'view', async ({ query }) => {
     const q = (query.q ?? '').trim();
     const whId = int(query.warehouse_id);

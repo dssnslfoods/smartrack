@@ -3,11 +3,11 @@ import { api, auth, wh } from './api.js';
 import { h, $ } from './ui.js';
 import { loginView } from './views/login.js';
 import { dashboardView } from './views/dashboard.js';
-import { searchView } from './views/search.js';
+import { searchView } from './views/search.js?v=22';
 import { pickView } from './views/pick.js';
 import { overviewView, rackView } from './views/map.js';
 import { historyView } from './views/history.js';
-import { settingsView } from './views/settings.js';
+import { settingsView } from './views/settings.js?v=22';
 import { reportsView } from './views/reports.js';
 import { warehouseListView, warehouseLayoutView } from './views/layout.js';
 
