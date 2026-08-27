@@ -145,7 +145,7 @@ export async function pickView() {
           h('h2', {}, `ใบสั่งหยิบ — ${plan.sku.sku_name}`),
           h('div', { class: 'actions' },
             h('button', { class: 'btn', onclick: () => download('/api/export/picklist.csv', params()) }, '⬇️ CSV'),
-            h('button', { class: 'btn', onclick: () => window.print() }, '🖨️ พิมพ์'),
+            h('button', { class: 'btn', onclick: printPickup }, '🖨️ พิมพ์'),
             plan.lines.length && auth.can('move')
               ? h('button', { class: 'btn primary', onclick: confirmPick }, '✅ ยืนยันหยิบตามแผน')
               : null)),
@@ -193,6 +193,100 @@ export async function pickView() {
           }
         } }, '✅ ยืนยันหยิบ'),
       ]);
+  }
+
+  function printPickup() {
+    if (!plan || !plan.lines.length) return;
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const now = new Date();
+    const dateStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear() + 543}`;
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const rows = plan.lines.map((l) => `
+      <tr>
+        <td class="c">${l.seq}</td>
+        <td class="mono">${esc(l.location_code)}</td>
+        <td class="c">L${l.level} / D${l.depth}</td>
+        <td class="mono">${esc(l.lot_no ?? '-')}</td>
+        <td>${l.exp_date ? esc(fmtDate(l.exp_date)) : '-'}</td>
+        <td class="n">${Number(l.quantity).toLocaleString('th-TH')}</td>
+        <td class="n take">${Number(l.take).toLocaleString('th-TH')}</td>
+        <td class="n">${Number(l.remaining_after).toLocaleString('th-TH')}</td>
+        <td class="c">${l.needs_forklift ? '🚜' : ''}</td>
+        <td class="check"></td>
+      </tr>`).join('');
+    const total = plan.lines.reduce((s, l) => s + l.take, 0);
+    const html = `<!doctype html><html lang="th"><head><meta charset="utf-8">
+<title>ใบเบิกสินค้า — ${esc(plan.sku.sku_name)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:'TH Sarabun New','Sarabun',sans-serif;font-size:15px;margin:20px 28px;color:#111}
+  h1{font-size:22px;margin:0;text-align:center}
+  .sub{text-align:center;color:#555;margin:0 0 12px;font-size:13px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+  .logo{font-weight:700;font-size:14px}
+  .logo small{display:block;font-weight:400;color:#555;font-size:12px}
+  .doc-no{text-align:right;font-size:13px;color:#555}
+  .info{display:grid;grid-template-columns:1fr 1fr;gap:2px 20px;margin:10px 0;font-size:14px;border:1px solid #ccc;padding:8px 12px;border-radius:4px}
+  .info b{min-width:100px;display:inline-block}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:13px}
+  th,td{border:1px solid #888;padding:4px 7px;text-align:left}
+  th{background:#e8e8e8;font-weight:700;font-size:12px}
+  .c{text-align:center} .n{text-align:right} .mono{font-family:'Courier New',monospace;font-size:12px}
+  .take{font-weight:700;color:#0f766e;font-size:14px}
+  .check{width:36px}
+  tfoot th{font-size:13px}
+  tfoot .take{font-size:15px}
+  .note-box{margin-top:12px;border:1px solid #ccc;border-radius:4px;padding:8px 12px;min-height:48px}
+  .note-box b{font-size:13px}
+  .sign{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-top:40px;text-align:center;font-size:14px}
+  .sign div{padding-top:6px}
+  .sign .line{border-top:1px solid #333;margin-top:40px;padding-top:4px}
+  .sign .role{font-weight:700;margin-bottom:2px}
+  .sign small{display:block;color:#777;font-size:12px}
+  .footer{margin-top:16px;text-align:center;font-size:11px;color:#999;border-top:1px solid #ddd;padding-top:6px}
+  @media print{body{margin:12px 16px} button{display:none!important} .no-print{display:none!important}}
+</style></head><body>
+<button onclick="print()" style="float:right;padding:8px 20px;cursor:pointer" class="no-print">🖨️ พิมพ์</button>
+<div class="header">
+  <div class="logo">EVERYDAYHAPPY CO., LTD.<small>De Leaf — ระบบจัดการคลังสินค้า</small></div>
+  <div class="doc-no">วันที่พิมพ์: ${dateStr} ${timeStr}</div>
+</div>
+<h1>ใบเบิกสินค้า / Pickup Order</h1>
+<p class="sub">เอกสารนี้ใช้ประกอบการหยิบสินค้าจากคลัง — กรุณาตรวจสอบและลงนามเมื่อหยิบครบ</p>
+<div class="info">
+  <div><b>สินค้า:</b> ${esc(plan.sku.sku_name)}</div>
+  <div><b>รหัสสินค้า:</b> ${esc(plan.sku.sku_code)}</div>
+  <div><b>จำนวนที่เบิก:</b> <strong>${total.toLocaleString('th-TH')} ${esc(plan.sku.unit)}</strong></div>
+  <div><b>ลำดับการหยิบ:</b> ${esc(plan.strategy)}</div>
+  <div><b>คลัง:</b> ${esc(wh.name ?? wh.label ?? 'ทุกคลัง')}</div>
+  <div><b>จำนวนตำแหน่ง:</b> ${plan.lines.length} ตำแหน่ง</div>
+</div>
+<table>
+  <thead><tr>
+    <th class="c" style="width:30px">#</th>
+    <th>ตำแหน่ง</th><th class="c">ชั้น/ตอน</th><th>Lot</th><th>วันหมดอายุ</th>
+    <th class="n">มีอยู่</th><th class="n">หยิบ</th><th class="n">เหลือ</th>
+    <th class="c" style="width:28px">ยก</th><th class="c">✓</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr>
+    <th colspan="5" class="n">รวมทั้งสิ้น</th>
+    <th class="n">${plan.lines.reduce((s, l) => s + l.quantity, 0).toLocaleString('th-TH')}</th>
+    <th class="n take">${total.toLocaleString('th-TH')} ${esc(plan.sku.unit)}</th>
+    <th colspan="3"></th>
+  </tr></tfoot>
+</table>
+<div class="note-box"><b>หมายเหตุ:</b></div>
+<div class="sign">
+  <div><div class="role">ผู้เบิกสินค้า</div><div class="line">ลงชื่อ ................................................</div><small>วันที่ ........../............/............</small></div>
+  <div><div class="role">ผู้อนุมัติ</div><div class="line">ลงชื่อ ................................................</div><small>วันที่ ........../............/............</small></div>
+  <div><div class="role">ผู้จ่ายสินค้า</div><div class="line">ลงชื่อ ................................................</div><small>วันที่ ........../............/............</small></div>
+</div>
+<div class="footer">พิมพ์จากระบบ RACK Management — De Leaf WMS · ${dateStr} ${timeStr}</div>
+</body></html>`;
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
   }
 
   renderSkus();
