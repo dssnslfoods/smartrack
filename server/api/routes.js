@@ -27,6 +27,7 @@ export const routes = [
   ['GET', '/api/pick/plan', 'view', ({ query }) => inv.pickPlan({
     sku_id: int(query.sku_id), quantity: int(query.quantity),
     min_days: int(query.min_days), max_days: int(query.max_days),
+    min_pct: int(query.min_pct), max_pct: int(query.max_pct),
     warehouse_id: int(query.warehouse_id), zone_id: int(query.zone_id), strategy: query.strategy,
   })],
   ['POST', '/api/pick/confirm', 'move', ({ body, user }) => inv.pickConfirm(body, user)],

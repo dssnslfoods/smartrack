@@ -1,6 +1,6 @@
 // รับสินค้าเข้าคลัง (GRN) — หลายรายการ/หลาย Lot ต่อใบ + QC + อ้างอิงเลข PO
 import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal } from '../ui.js?v=26';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal } from '../ui.js?v=29';
 
 export async function inboundView() {
   const [skus, zones] = await Promise.all([api.get('/api/skus'), api.get('/api/zones')]);
@@ -53,9 +53,22 @@ export async function inboundView() {
 
     const pickBtn = h('button', {
       class: 'btn', type: 'button', style: 'white-space:nowrap',
-      title: 'เลือกตำแหน่งจากแผนผังชั้นวาง',
-      onclick: () => locationPickerModal((url, params) => api.get(url, params), (code) => { loc.value = code; sugg.replaceChildren(); }),
-    }, '🗺️ เลือกจากแผนผัง');
+      title: 'เลือกตำแหน่งจากแผนผังชั้นวาง (เลือกได้หลายตำแหน่ง)',
+      onclick: () => locationPickerModal((url, params) => api.get(url, params), (codes) => {
+        if (!Array.isArray(codes)) { loc.value = codes; sugg.replaceChildren(); return; }
+        loc.value = codes[0]; sugg.replaceChildren();
+        for (let i = 1; i < codes.length; i++) {
+          addLine();
+          const newLine = lines[lines.length - 1];
+          newLine.sel.value = sel.value; newLine.sel.dispatchEvent(new Event('change'));
+          newLine.qty.value = qty.value;
+          newLine.lot.value = lot.value;
+          newLine.mfg.value = mfg.value;
+          newLine.exp.value = exp.value;
+          newLine.loc.value = codes[i];
+        }
+      }, { multi: true }),
+    }, '🗺️ เลือกหลายตำแหน่ง');
 
     const line = { sel, unitSel, qty, lot, mfg, exp, loc };
     const row = h('div', { class: 'card', style: 'padding:12px;margin-bottom:10px' },

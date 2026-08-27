@@ -166,8 +166,13 @@ const numOrNull = (v) => {
 };
 
 /** เหตุผลที่ Lot นี้หยิบไม่ได้ (null = หยิบได้) */
-function pickReject(days, minDays, maxDays) {
+function pickReject(days, minDays, maxDays, pctRemaining, minPct, maxPct) {
   if (days !== null && days < 0) return `หมดอายุแล้ว ${Math.abs(days)} วัน`;
+  if (minPct !== null || maxPct !== null) {
+    if (pctRemaining === null) return 'ไม่ระบุวันผลิต/อายุสินค้า — คำนวณ % คงเหลือไม่ได้';
+    if (minPct !== null && pctRemaining < minPct) return `อายุคงเหลือ ${pctRemaining}% (ต้องการอย่างน้อย ${minPct}%)`;
+    if (maxPct !== null && pctRemaining > maxPct) return `อายุคงเหลือ ${pctRemaining}% (ต้องการไม่เกิน ${maxPct}%)`;
+  }
   if (minDays === null && maxDays === null) return null;
   if (days === null) return 'ไม่ระบุวันหมดอายุ — รับประกันอายุคงเหลือไม่ได้';
   if (minDays !== null && days < minDays) return `อายุคงเหลือ ${days} วัน (ต้องการอย่างน้อย ${minDays} วัน)`;
@@ -181,7 +186,7 @@ function pickReject(days, minDays, maxDays) {
  * คืน: รายการว่าไปหยิบที่ตำแหน่งไหน ตำแหน่งละเท่าไร เรียงตาม FEFO จนครบจำนวน
  * หมายเหตุ: Lot ที่หมดอายุแล้วจะไม่ถูกจัดสรรให้เสมอ
  */
-export async function pickPlan({ sku_id, quantity, min_days, max_days, warehouse_id, zone_id, strategy } = {}) {
+export async function pickPlan({ sku_id, quantity, min_days, max_days, min_pct, max_pct, warehouse_id, zone_id, strategy } = {}) {
   const sku = await get('SELECT * FROM skus WHERE sku_id = ?', Number(sku_id));
   if (!sku) throw notFound('ไม่พบสินค้า — กรุณาเลือกสินค้าที่ต้องการหยิบ');
 
@@ -190,8 +195,12 @@ export async function pickPlan({ sku_id, quantity, min_days, max_days, warehouse
 
   const minDays = numOrNull(min_days);
   const maxDays = numOrNull(max_days);
+  const minPct = numOrNull(min_pct);
+  const maxPct = numOrNull(max_pct);
   if (minDays !== null && maxDays !== null && minDays > maxDays)
     throw badRequest('ช่วงอายุคงเหลือไม่ถูกต้อง — ค่าขั้นต่ำมากกว่าค่าสูงสุด');
+  if (minPct !== null && maxPct !== null && minPct > maxPct)
+    throw badRequest('ช่วง % อายุคงเหลือไม่ถูกต้อง — ค่าขั้นต่ำมากกว่าค่าสูงสุด');
 
   const mode = strategy === 'FIFO' ? 'FIFO' : 'FEFO';
   const params = [Number(sku.sku_id)];
@@ -206,7 +215,7 @@ export async function pickPlan({ sku_id, quantity, min_days, max_days, warehouse
   const skipped = [];
   for (const r of rows) {
     const item = { ...r, expiry: expiryState(r.days_to_expiry), needs_forklift: r.level > 1 };
-    const reason = pickReject(r.days_to_expiry, minDays, maxDays);
+    const reason = pickReject(r.days_to_expiry, minDays, maxDays, r.pct_remaining, minPct, maxPct);
     if (reason) skipped.push({ ...item, reason });
     else usable.push(item);
   }
@@ -224,7 +233,7 @@ export async function pickPlan({ sku_id, quantity, min_days, max_days, warehouse
   return {
     sku,
     strategy: mode,
-    filter: { min_days: minDays, max_days: maxDays },
+    filter: { min_days: minDays, max_days: maxDays, min_pct: minPct, max_pct: maxPct },
     requested: need,
     allocated: need - left,
     shortfall: left,

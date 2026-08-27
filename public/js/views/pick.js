@@ -1,7 +1,7 @@
 // วางแผนหยิบสินค้า — ระบุสินค้า + จำนวน + เงื่อนไขอายุคงเหลือ
 // ระบบคำนวณให้เองว่าไปหยิบตำแหน่งไหน ตำแหน่งละเท่าไร ตามลำดับ FEFO
 import { api, auth, wh, download } from '../api.js';
-import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal } from '../ui.js?v=26';
+import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal } from '../ui.js?v=29';
 
 export async function pickView() {
   const [skus, zones, channels] = await Promise.all([
@@ -44,7 +44,18 @@ export async function pickView() {
   // ---------------- 2. เงื่อนไขการหยิบ ----------------
   const qty = h('input', { type: 'number', min: '1', placeholder: 'เช่น 500' });
   const minDays = h('input', { type: 'number', min: '0', placeholder: 'เช่น 90' });
+  const minUnit = h('select', { style: 'width:80px' },
+    h('option', { value: 'days' }, 'วัน'), h('option', { value: 'pct' }, '%'));
   const maxDays = h('input', { type: 'number', min: '0', placeholder: 'ไม่จำกัด' });
+  const maxUnit = h('select', { style: 'width:80px' },
+    h('option', { value: 'days' }, 'วัน'), h('option', { value: 'pct' }, '%'));
+  const syncHint = (inp, unit, base) => {
+    const hint = inp.closest('.field')?.querySelector('.hint');
+    if (hint) hint.textContent = unit.value === 'pct' ? `% ของอายุทั้งหมด — เว้นว่างคือไม่กำหนด` : `จำนวนวัน — เว้นว่างคือไม่กำหนด`;
+    inp.placeholder = unit.value === 'pct' ? (base === 'min' ? 'เช่น 50' : 'ไม่จำกัด') : (base === 'min' ? 'เช่น 90' : 'ไม่จำกัด');
+  };
+  minUnit.onchange = () => syncHint(minDays, minUnit, 'min');
+  maxUnit.onchange = () => syncHint(maxDays, maxUnit, 'max');
   const zoneSel = h('select', {}, h('option', { value: '' }, 'ทุกโซน'),
     ...zones.map((z) => h('option', { value: z.zone_id }, `${z.zone_code} — ${z.zone_name}`)));
   const strategy = h('select', {},
@@ -57,7 +68,11 @@ export async function pickView() {
   const out = h('div', {});
 
   const params = () => ({
-    sku_id: sku?.sku_id, quantity: qty.value, min_days: minDays.value, max_days: maxDays.value,
+    sku_id: sku?.sku_id, quantity: qty.value,
+    min_days: minUnit.value === 'days' ? minDays.value : '',
+    max_days: maxUnit.value === 'days' ? maxDays.value : '',
+    min_pct: minUnit.value === 'pct' ? minDays.value : '',
+    max_pct: maxUnit.value === 'pct' ? maxDays.value : '',
     zone_id: zoneSel.value, warehouse_id: wh.id, strategy: strategy.value,
   });
 
@@ -109,7 +124,7 @@ export async function pickView() {
         ], plan.lines)
       : h('div', { class: 'empty-state' },
           h('p', {}, 'ไม่มี Lot ที่เข้าเงื่อนไขให้หยิบ'),
-          h('p', { style: 'font-size:13px' }, 'ลองลดจำนวนวันหมดอายุคงเหลือขั้นต่ำ หรือเลือกโซนอื่น'));
+          h('p', { style: 'font-size:13px' }, 'ลองลดเกณฑ์อายุคงเหลือขั้นต่ำ หรือเลือกโซนอื่น'));
 
     const skipped = plan.skipped.length
       ? h('details', { class: 'card', style: 'margin-top:14px' },
@@ -196,8 +211,8 @@ export async function pickView() {
       h('h2', {}, '2. ระบุจำนวนและเงื่อนไข'),
       h('div', { class: 'row' },
         field('จำนวนที่ต้องการ *', qty),
-        field('อายุคงเหลืออย่างน้อย', minDays, 'จำนวนวัน — เว้นว่างคือไม่กำหนด'),
-        field('อายุคงเหลือไม่เกิน', maxDays, 'จำนวนวัน — เว้นว่างคือไม่กำหนด')),
+        field('อายุคงเหลืออย่างน้อย', h('div', { style: 'display:flex;gap:4px' }, minDays, minUnit), 'จำนวนวัน — เว้นว่างคือไม่กำหนด'),
+        field('อายุคงเหลือไม่เกิน', h('div', { style: 'display:flex;gap:4px' }, maxDays, maxUnit), 'จำนวนวัน — เว้นว่างคือไม่กำหนด')),
       h('div', { class: 'row' },
         field('เฉพาะโซน', zoneSel),
         field('ลำดับการหยิบ', strategy)),
