@@ -18,18 +18,7 @@ export const ROOT = join(__dirname, '..', '..');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
-  console.error(`
-  ╔════════════════════════════════════════════════════════════════╗
-  ║  ไม่พบ DATABASE_URL — ระบบต่อฐานข้อมูลไม่ได้
-  ║
-  ║  วิธีตั้งค่า: สร้างไฟล์ .env ที่โฟลเดอร์หลักของโปรเจกต์ แล้วใส่
-  ║     DATABASE_URL=postgresql://postgres:<รหัสผ่าน>@db.<ref>.supabase.co:5432/postgres
-  ║
-  ║  หาได้จาก Supabase Dashboard → Settings → Database → Connection string → URI
-  ║  (ไฟล์ .env ถูกกันไม่ให้ขึ้น GitHub แล้ว — อย่าใส่รหัสผ่านลงในโค้ด)
-  ╚════════════════════════════════════════════════════════════════╝
-`);
-  process.exit(1);
+  console.warn('[DB] ⚠️ ไม่พบ DATABASE_URL — ระบบจะต่อฐานข้อมูลไม่ได้จนกว่าจะตั้งค่า');
 }
 
 // ---------- แปลงชนิดข้อมูลให้เหมือนของเดิม เพื่อไม่ให้ API เปลี่ยนรูปแบบ ----------
@@ -40,17 +29,19 @@ types.setTypeParser(1082, (v) => v);                                // date     
 types.setTypeParser(1114, (v) => (v ? String(v).slice(0, 19) : v)); // timestamp → 'YYYY-MM-DD HH:MM:SS'
 
 // Supabase บังคับ SSL ส่วน PostgreSQL บนเครื่องตัวเองมักไม่ได้เปิดไว้ — เลือกให้อัตโนมัติ
-const isLocal = /@(localhost|127\.0\.0\.1|\[::1\])[:/]|host=\/|sslmode=disable/.test(DATABASE_URL);
+const isLocal = DATABASE_URL && /@(localhost|127\.0\.0\.1|\[::1\])[:/]|host=\/|sslmode=disable/.test(DATABASE_URL);
 
-export const pool = new pg.Pool({
-  connectionString: DATABASE_URL,
-  ssl: isLocal ? false : { rejectUnauthorized: false },
-  max: Number(process.env.RAG_DB_POOL || 10),
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 15_000,
-});
+export const pool = DATABASE_URL
+  ? new pg.Pool({
+      connectionString: DATABASE_URL,
+      ssl: isLocal ? false : { rejectUnauthorized: false },
+      max: Number(process.env.RAG_DB_POOL || 10),
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 15_000,
+    })
+  : null;
 
-pool.on('error', (err) => console.error('[DB] connection error:', err.message));
+if (pool) pool.on('error', (err) => console.error('[DB] connection error:', err.message));
 
 // เวลาไทยแบบไม่พึ่ง session timezone — ให้ผลเท่ากันเสมอไม่ว่าต่อผ่าน pooler แบบไหน
 export const NOW_TH = "(now() AT TIME ZONE 'Asia/Bangkok')";
@@ -77,6 +68,7 @@ function toPg(sql) {
 const txStore = new AsyncLocalStorage();
 
 async function exec(sql, params) {
+  if (!pool) throw new Error('DATABASE_URL ไม่ได้ตั้งค่า — ต่อฐานข้อมูลไม่ได้');
   const client = txStore.getStore();
   const text = toPg(sql);
   return client ? client.query(text, params) : pool.query(text, params);
@@ -112,6 +104,7 @@ export async function run(sql, ...params) {
  * คำสั่งทุกตัวที่เรียกภายใน fn จะวิ่งบน connection เดียวกันโดยอัตโนมัติ
  */
 export async function tx(fn) {
+  if (txStore.getStore()) return await fn();   // อยู่ใน Transaction อยู่แล้ว — ใช้ต่อได้เลย ไม่เปิดซ้อน
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

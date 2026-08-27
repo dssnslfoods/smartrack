@@ -1,12 +1,13 @@
 // วางแผนหยิบสินค้า — ระบุสินค้า + จำนวน + เงื่อนไขอายุคงเหลือ
 // ระบบคำนวณให้เองว่าไปหยิบตำแหน่งไหน ตำแหน่งละเท่าไร ตามลำดับ FEFO
 import { api, auth, wh, download } from '../api.js';
-import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox } from '../ui.js';
+import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal } from '../ui.js?v=26';
 
 export async function pickView() {
-  const [skus, zones] = await Promise.all([
+  const [skus, zones, channels] = await Promise.all([
     api.get('/api/skus', { warehouse_id: wh.id }),
     api.get('/api/zones', { warehouse_id: wh.id }),
+    api.get('/api/channels').catch(() => []),
   ]);
 
   let sku = null;
@@ -137,22 +138,46 @@ export async function pickView() {
       skipped);
   }
 
-  // ---------------- ยืนยันหยิบจริง ----------------
+  // ---------------- ยืนยันหยิบจริง — สร้างใบจ่ายสินค้า (ISSUE) พร้อมอ้างอิง SO/ลูกค้า ----------------
   async function confirmPick() {
-    const ok = await confirmBox('ยืนยันหยิบสินค้า',
-      `หยิบ ${plan.sku.sku_name} รวม ${fmtNum(plan.allocated)} ${plan.sku.unit} จาก ${plan.lines.length} ตำแหน่ง — ` +
-      'ระบบจะตัดสต๊อกและบันทึกประวัติทันที', 'ยืนยันหยิบ');
-    if (!ok) return;
-    try {
-      const res = await api.post('/api/pick/confirm', {
+    const soRef = h('input', { placeholder: 'เลขที่ SO / MO (ถ้ามี)' });
+    const customer = h('input', { placeholder: 'ชื่อลูกค้า / ปลายทาง' });
+    const chSel = h('select', {}, h('option', { value: '' }, '— ไม่ระบุช่องทาง —'),
+      ...channels.filter((c) => c.status === 'ACTIVE').map((c) =>
+        h('option', { value: c.channel_id },
+          `${c.channel_code} — ${c.channel_name}${c.min_pct_remaining !== null ? ` (อายุ ≥${c.min_pct_remaining}%)` : ''}`)));
+
+    const doIssue = async (force) => {
+      const res = await api.post('/api/docs/issue', {
+        ref_no: soRef.value, party: customer.value, channel_id: chSel.value || null, force,
+        so_note: `หยิบตามแผน ${plan.strategy} — ${plan.sku.sku_code}`,
         lines: plan.lines.map((l) => ({ item_id: l.item_id, take: l.take, location_code: l.location_code })),
-        note: `หยิบตามแผน ${plan.strategy} — ${plan.sku.sku_code}`,
       });
-      toast(`หยิบสำเร็จ ${fmtNum(res.total)} ${plan.sku.unit} จาก ${res.picked} ตำแหน่ง`);
+      toast(`จ่ายออกสำเร็จ ${fmtNum(res.total)} ${plan.sku.unit} — ใบจ่ายสินค้า ${res.doc_no}`);
+      m.close();
       skus.splice(0, skus.length, ...await api.get('/api/skus', { warehouse_id: wh.id }));
       renderSkus();
       calculate();
-    } catch (err) { toast(err.message, 'err'); }
+    };
+
+    const m = modal('ยืนยันหยิบ + สร้างใบจ่ายสินค้า',
+      h('div', {},
+        h('p', { class: 'muted' },
+          `หยิบ ${plan.sku.sku_name} รวม ${fmtNum(plan.allocated)} ${plan.sku.unit} จาก ${plan.lines.length} ตำแหน่ง — ระบบจะตัดสต๊อกและเปิดใบจ่ายสินค้าให้ติดตามสถานะต่อได้`),
+        h('div', { class: 'grid g2' }, field('เลขที่ SO / MO', soRef), field('ลูกค้า', customer)),
+        field('ช่องทางขาย', chSel, 'ระบบจะตรวจ % อายุคงเหลือขั้นต่ำของช่องทางให้อัตโนมัติ')),
+      [
+        h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
+        h('button', { class: 'btn primary', onclick: async () => {
+          try { await doIssue(false); } catch (err) {
+            if (err.code === 'CHANNEL_PCT') {
+              const ok = await confirmBox('อายุคงเหลือต่ำกว่าเกณฑ์ช่องทาง',
+                `${err.message} — ยืนยันจ่ายออกทั้งที่ต่ำกว่าเกณฑ์หรือไม่?`, 'ยืนยันจ่ายออก');
+              if (ok) { try { await doIssue(true); } catch (e2) { toast(e2.message, 'err'); } }
+            } else toast(err.message, 'err');
+          }
+        } }, '✅ ยืนยันหยิบ'),
+      ]);
   }
 
   renderSkus();

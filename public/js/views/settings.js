@@ -1,12 +1,12 @@
 // ตั้งค่าระบบ — จัดการโซน ชั้นวาง สินค้า ผู้ใช้งาน (เฉพาะ ADMIN)
 import { api } from '../api.js';
-import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL } from '../ui.js';
+import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=26';
 
 export async function settingsView() {
-  const tabs = ['warehouses', 'zones', 'rags', 'skus', 'users'];
+  const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users'];
   const labels = {
     warehouses: 'คลังสินค้า', zones: 'โซน', rags: 'ชั้นวาง (RACK)',
-    skus: 'สินค้า (SKU)', users: 'ผู้ใช้งาน',
+    skus: 'สินค้า (SKU)', channels: 'ช่องทางขาย', users: 'ผู้ใช้งาน',
   };
   let active = 'warehouses';
 
@@ -25,6 +25,7 @@ export async function settingsView() {
       else if (active === 'zones') await loadZones();
       else if (active === 'rags') await loadRags();
       else if (active === 'skus') await loadSkus();
+      else if (active === 'channels') await loadChannels();
       else await loadUsers();
     } catch (err) { content.replaceChildren(h('div', { class: 'empty-state' }, err.message)); }
   }
@@ -74,7 +75,7 @@ export async function settingsView() {
           class: 'btn danger',
           onclick: async () => {
             if (!(await confirmBox('ลบคลังสินค้า', `ลบคลัง ${w.wh_code}? (ต้องไม่มีโซนเหลืออยู่)`, 'ลบ'))) return;
-            try { await api.del(`/api/warehouses/${w.warehouse_id}`); toast('ลบคลังแล้ว'); m.close(); location.reload(); }
+            try { await api.del(`/api/warehouses/${w.warehouse_id}`); toast('ลบคลังแล้ว'); m.close(); load(); }
             catch (err) { toast(err.message, 'err'); }
           },
         }, '🗑 ลบ') : null,
@@ -86,7 +87,7 @@ export async function settingsView() {
               ...(status ? { status: status.value } : {}),
             };
             w ? await api.put(`/api/warehouses/${w.warehouse_id}`, body) : await api.post('/api/warehouses', body);
-            toast(w ? 'อัปเดตคลังแล้ว' : 'เพิ่มคลังเรียบร้อย'); m.close(); location.reload();
+            toast(w ? 'อัปเดตคลังแล้ว' : 'เพิ่มคลังเรียบร้อย'); m.close(); load();
           } catch (err) { toast(err.message, 'err'); }
         } }, 'บันทึก'),
       ].filter(Boolean));
@@ -132,7 +133,7 @@ export async function settingsView() {
           class: 'btn danger',
           onclick: async () => {
             if (!(await confirmBox('ลบโซน', `ลบโซน ${z.zone_code}?`, 'ลบ'))) return;
-            try { await api.del(`/api/zones/${z.zone_id}`); toast('ลบโซนแล้ว'); m.close(); location.reload(); }
+            try { await api.del(`/api/zones/${z.zone_id}`); toast('ลบโซนแล้ว'); m.close(); load(); }
             catch (err) { toast(err.message, 'err'); }
           },
         }, '🗑 ลบ') : null,
@@ -144,7 +145,7 @@ export async function settingsView() {
               ...(status ? { status: status.value } : {}),
             };
             z ? await api.put(`/api/zones/${z.zone_id}`, body) : await api.post('/api/zones', body);
-            toast(z ? 'อัปเดตโซนแล้ว' : 'เพิ่มโซนเรียบร้อย'); m.close(); location.reload();
+            toast(z ? 'อัปเดตโซนแล้ว' : 'เพิ่มโซนเรียบร้อย'); m.close(); load();
           } catch (err) { toast(err.message, 'err'); }
         } }, 'บันทึก'),
       ].filter(Boolean));
@@ -202,7 +203,7 @@ export async function settingsView() {
             if (body.total_depths % 2 !== 0) throw new Error('จำนวนล็อคต้องเป็นเลขคู่');
             const res = r ? await api.put(`/api/rags/${r.rag_id}`, body) : await api.post('/api/rags', body);
             toast(r ? 'อัปเดตชั้นวางแล้ว' : `เพิ่มชั้นวางเรียบร้อย (${res.total ?? res.created} ตำแหน่ง)`);
-            m.close(); location.reload();
+            m.close(); load();
           } catch (err) { toast(err.message, 'err'); }
         } }, 'บันทึก'),
       ]);
@@ -217,8 +218,10 @@ export async function settingsView() {
       table([
         { label: 'รหัส', key: 'sku_code', mono: true },
         { label: 'ชื่อสินค้า', key: 'sku_name' },
+        { label: 'ประเภท', value: (r) => (r.product_type ? pill(r.product_type, 'blue') : '—') },
         { label: 'หมวด', key: 'category' },
         { label: 'หน่วย', key: 'unit' },
+        { label: 'อายุ (ด.)', value: (r) => r.shelf_life_months ?? '—', num: true },
         { label: 'บาร์โค้ด', key: 'barcode', mono: true },
         { label: 'จัดเก็บอยู่', value: (r) => `${r.locations_used} ตำแหน่ง`, num: true },
         { label: 'ยอดรวม', value: (r) => fmtNum(r.qty_in_stock), num: true },
@@ -246,15 +249,38 @@ export async function settingsView() {
     cat.onchange = () => { catCustom.style.display = cat.value === '__other__' ? '' : 'none'; };
     const unit = h('input', { value: s?.unit ?? 'ชิ้น' });
     const barcode = h('input', { value: s?.barcode ?? '', placeholder: 'บาร์โค้ดสินค้า (ถ้ามี)' });
+    const ptype = h('select', {},
+      h('option', { value: '' }, '— ไม่ระบุ —'),
+      ...Object.entries(PTYPE_LABEL).map(([v, l]) => h('option', { value: v, selected: s?.product_type === v }, l)));
+    const shelfLife = h('input', { type: 'number', min: '1', value: s?.shelf_life_months ?? '', placeholder: 'เช่น 36' });
     const status = s ? h('select', {},
       h('option', { value: 'ACTIVE', selected: s.status === 'ACTIVE' }, 'ใช้งาน'),
       h('option', { value: 'INACTIVE', selected: s.status === 'INACTIVE' }, 'ปิดใช้งาน')) : null;
 
+    // ---- หน่วยนับเพิ่มเติม (UoM) เช่น 1 ลัง = 12 ชิ้น ----
+    const unitRows = [];
+    const unitsBox = h('div', {});
+    function addUnitRow(u) {
+      const uname = h('input', { value: u?.unit_name ?? '', placeholder: 'เช่น ลัง', style: 'width:110px' });
+      const factor = h('input', { type: 'number', min: '0.001', step: 'any', value: u?.factor ?? '', placeholder: 'เช่น 12', style: 'width:90px' });
+      const row = { uname, factor };
+      unitRows.push(row);
+      unitsBox.append(h('div', { class: 'row', style: 'align-items:center;gap:8px;margin-bottom:6px' },
+        h('span', {}, '1'), uname, h('span', {}, '='), factor, h('span', { class: 'muted' }, unit.value || 'หน่วยฐาน'),
+        h('button', { class: 'btn ghost', onclick: (e) => { unitRows.splice(unitRows.indexOf(row), 1); e.target.closest('.row').remove(); } }, '🗑️')));
+    }
+    if (s) api.get(`/api/skus/${s.sku_id}/units`).then((units) => units.forEach(addUnitRow)).catch(() => {});
+
     const m = modal(s ? 'แก้ไขสินค้า' : 'เพิ่มสินค้าใหม่',
       h('div', {},
         h('div', { class: 'grid g2' }, field('รหัสสินค้า', code), field('ชื่อสินค้า', name)),
-        h('div', { class: 'grid g2' }, field('หมวดหมู่', h('div', {}, cat, catCustom)), field('หน่วยนับ', unit)),
+        h('div', { class: 'grid g2' }, field('ประเภทสินค้า', ptype), field('หมวดหมู่', h('div', {}, cat, catCustom))),
+        h('div', { class: 'grid g2' }, field('หน่วยนับ (หน่วยฐาน)', unit), field('อายุสินค้า (เดือน)', shelfLife, 'ใช้คำนวณ % อายุคงเหลือเมื่อ Lot ไม่ระบุวันผลิต')),
         field('บาร์โค้ด', barcode),
+        h('div', { class: 'field' },
+          h('label', {}, 'หน่วยนับเพิ่มเติม (เช่น ลัง / โหล)'),
+          unitsBox,
+          h('button', { class: 'btn ghost', onclick: () => addUnitRow() }, '+ เพิ่มหน่วย')),
         status ? field('สถานะ', status) : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
@@ -264,9 +290,72 @@ export async function settingsView() {
               sku_code: code.value.trim(), sku_name: name.value.trim(),
               category: (cat.value === '__other__' ? catCustom.value.trim() : cat.value) || null, unit: unit.value.trim() || 'ชิ้น',
               barcode: barcode.value.trim() || null, ...(status ? { status: status.value } : {}),
+              product_type: ptype.value || null,
+              shelf_life_months: shelfLife.value ? Number(shelfLife.value) : null,
             };
-            s ? await api.put(`/api/skus/${s.sku_id}`, body) : await api.post('/api/skus', body);
-            toast(s ? 'อัปเดตสินค้าแล้ว' : 'เพิ่มสินค้าเรียบร้อย'); m.close(); location.reload();
+            const saved = s ? await api.put(`/api/skus/${s.sku_id}`, body) : await api.post('/api/skus', body);
+            const units = unitRows
+              .filter((r) => r.uname.value.trim() && Number(r.factor.value) > 0)
+              .map((r) => ({ unit_name: r.uname.value.trim(), factor: Number(r.factor.value) }));
+            await api.put(`/api/skus/${saved.sku_id}/units`, { units });
+            toast(s ? 'อัปเดตสินค้าแล้ว' : 'เพิ่มสินค้าเรียบร้อย'); m.close(); load();
+          } catch (err) { toast(err.message, 'err'); }
+        } }, 'บันทึก'),
+      ]);
+  }
+
+  // ======== ช่องทางขาย + เกณฑ์อายุคงเหลือ ========
+  async function loadChannels() {
+    const [channels, settings] = await Promise.all([api.get('/api/channels'), api.get('/api/settings')]);
+    const moveM = h('input', { type: 'number', min: '0', value: settings.expiry_move_months, style: 'width:90px' });
+    const cutM = h('input', { type: 'number', min: '0', value: settings.expiry_cutoff_months, style: 'width:90px' });
+
+    content.replaceChildren(
+      h('div', { class: 'card', style: 'margin-bottom:14px' },
+        h('h2', {}, 'เกณฑ์การจัดการอายุสินค้า'),
+        h('div', { class: 'row', style: 'align-items:flex-end;flex-wrap:wrap' },
+          field('ย้ายเข้าโปรโมชันเมื่ออายุต่ำกว่า (เดือน)', moveM),
+          field('ตัดออกจากระบบเมื่ออายุต่ำกว่า (เดือน)', cutM),
+          h('button', { class: 'btn primary', onclick: async () => {
+            try {
+              await api.put('/api/settings', { expiry_move_months: moveM.value, expiry_cutoff_months: cutM.value });
+              toast('บันทึกเกณฑ์แล้ว');
+            } catch (err) { toast(err.message, 'err'); }
+          } }, 'บันทึกเกณฑ์'))),
+      h('div', { style: 'text-align:right;margin-bottom:12px' },
+        h('button', { class: 'btn primary', onclick: () => channelForm() }, '+ เพิ่มช่องทาง')),
+      table([
+        { label: 'รหัส', key: 'channel_code', mono: true },
+        { label: 'ชื่อช่องทาง', key: 'channel_name' },
+        { label: '% อายุคงเหลือขั้นต่ำ', value: (r) => (r.min_pct_remaining === null ? 'ไม่จำกัด' : `≥ ${r.min_pct_remaining}%`), num: true },
+        { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
+        { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => channelForm(r) }, 'แก้ไข') },
+      ], channels));
+  }
+
+  function channelForm(c) {
+    const code = h('input', { value: c?.channel_code ?? '', placeholder: 'เช่น MT / GT / ONLINE' });
+    const name = h('input', { value: c?.channel_name ?? '', placeholder: 'เช่น Modern Trade' });
+    const pct = h('input', { type: 'number', min: '0', max: '100', value: c?.min_pct_remaining ?? '', placeholder: 'เว้นว่าง = ไม่จำกัด' });
+    const status = c ? h('select', {},
+      h('option', { value: 'ACTIVE', selected: c.status === 'ACTIVE' }, 'ใช้งาน'),
+      h('option', { value: 'INACTIVE', selected: c.status === 'INACTIVE' }, 'ปิดใช้งาน')) : null;
+    const m = modal(c ? 'แก้ไขช่องทางขาย' : 'เพิ่มช่องทางขาย',
+      h('div', {},
+        h('div', { class: 'grid g2' }, field('รหัสช่องทาง', code), field('ชื่อช่องทาง', name)),
+        field('% อายุคงเหลือขั้นต่ำที่รับได้', pct, 'เช่น MT = 80, GT = 50 — ระบบใช้ตรวจตอนจ่ายออกและในหน้าอายุสินค้า'),
+        status ? field('สถานะ', status) : null),
+      [
+        h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
+        h('button', { class: 'btn primary', onclick: async () => {
+          try {
+            const body = {
+              channel_code: code.value, channel_name: name.value,
+              min_pct_remaining: pct.value === '' ? null : Number(pct.value),
+              ...(status ? { status: status.value } : {}),
+            };
+            c ? await api.put(`/api/channels/${c.channel_id}`, body) : await api.post('/api/channels', body);
+            toast('บันทึกช่องทางแล้ว'); m.close(); load();
           } catch (err) { toast(err.message, 'err'); }
         } }, 'บันทึก'),
       ]);
@@ -314,7 +403,7 @@ export async function settingsView() {
               ...(status ? { status: status.value } : {}),
             };
             u ? await api.put(`/api/users/${u.user_id}`, body) : await api.post('/api/users', body);
-            toast(u ? 'อัปเดตผู้ใช้งานแล้ว' : 'เพิ่มผู้ใช้งานเรียบร้อย'); m.close(); location.reload();
+            toast(u ? 'อัปเดตผู้ใช้งานแล้ว' : 'เพิ่มผู้ใช้งานเรียบร้อย'); m.close(); load();
           } catch (err) { toast(err.message, 'err'); }
         } }, 'บันทึก'),
       ]);

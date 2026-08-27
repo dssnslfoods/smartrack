@@ -6,6 +6,9 @@ import { syncRagLocations, rackMap, emptyLocations } from '../services/locations
 import * as inv from '../services/inventory.js';
 import * as rpt from '../services/reports.js';
 import * as wh from '../services/warehouses.js';
+import * as docs from '../services/documents.js';
+import * as exp from '../services/expiry.js';
+import * as cnt from '../services/counting.js';
 import { locationLabels } from '../services/labels.js';
 
 /** [method, path, สิทธิ์ที่ต้องมี (null = ไม่ต้องล็อกอิน), handler] */
@@ -159,18 +162,24 @@ export const routes = [
   ['POST', '/api/skus', 'manage', async ({ body }) => {
     requireFields(body, ['sku_code', 'sku_name']);
     if (await get('SELECT 1 FROM skus WHERE sku_code = ?', body.sku_code)) throw conflict('รหัสสินค้านี้ถูกใช้แล้ว');
-    const r = await run('INSERT INTO skus (sku_code, sku_name, category, unit, barcode) VALUES (?,?,?,?,?)',
-      body.sku_code.trim(), body.sku_name.trim(), body.category ?? null, body.unit || 'ชิ้น', body.barcode ?? null);
+    const r = await run('INSERT INTO skus (sku_code, sku_name, category, unit, barcode, product_type, shelf_life_months) VALUES (?,?,?,?,?,?,?)',
+      body.sku_code.trim(), body.sku_name.trim(), body.category ?? null, body.unit || 'ชิ้น', body.barcode ?? null,
+      body.product_type || null, body.shelf_life_months ? Number(body.shelf_life_months) : null);
     return await get('SELECT * FROM skus WHERE sku_id = ?', Number(r.lastInsertRowid));
   }],
   ['PUT', '/api/skus/:id', 'manage', async ({ params, body }) => {
     const s = await get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
     if (!s) throw notFound('ไม่พบสินค้า');
-    await run('UPDATE skus SET sku_code=?, sku_name=?, category=?, unit=?, barcode=?, status=? WHERE sku_id=?',
+    await run('UPDATE skus SET sku_code=?, sku_name=?, category=?, unit=?, barcode=?, status=?, product_type=?, shelf_life_months=? WHERE sku_id=?',
       body.sku_code ?? s.sku_code, body.sku_name ?? s.sku_name, body.category ?? s.category,
-      body.unit ?? s.unit, body.barcode ?? s.barcode, body.status ?? s.status, +params.id);
+      body.unit ?? s.unit, body.barcode ?? s.barcode, body.status ?? s.status,
+      body.product_type !== undefined ? (body.product_type || null) : s.product_type,
+      body.shelf_life_months !== undefined ? (body.shelf_life_months ? Number(body.shelf_life_months) : null) : s.shelf_life_months,
+      +params.id);
     return await get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
   }],
+  ['GET', '/api/skus/:id/units', 'view', ({ params }) => docs.listSkuUnits(+params.id)],
+  ['PUT', '/api/skus/:id/units', 'manage', ({ params, body }) => docs.saveSkuUnits(+params.id, body.units)],
 
   // ---------------- ผู้ใช้งาน ----------------
   ['GET', '/api/users', 'manage', async () => await listUsers()],
@@ -191,6 +200,34 @@ export const routes = [
     return { ok: true };
   }],
 
+  // ---------------- เอกสารคลัง: รับเข้า/จ่ายออก/โอน/คืน/ตัดเสีย ----------------
+  ['GET', '/api/docs', 'view', ({ query }) => docs.listDocuments(query)],
+  ['GET', '/api/docs/:id', 'view', ({ params }) => docs.docDetail(+params.id)],
+  ['POST', '/api/docs/grn', 'move', ({ body, user }) => docs.createGRN(body, user)],
+  ['POST', '/api/docs/issue', 'move', ({ body, user }) => docs.createIssue(body, user)],
+  ['POST', '/api/docs/transfer', 'move', ({ body, user }) => docs.createTransfer(body, user)],
+  ['POST', '/api/docs/return-in', 'move', ({ body, user }) => docs.createReturnIn(body, user)],
+  ['POST', '/api/docs/return-out', 'move', ({ body, user }) => docs.createReturnOut(body, user)],
+  ['POST', '/api/docs/scrap', 'move', ({ body, user }) => docs.createScrap(body, user)],
+  ['PATCH', '/api/docs/:id/ship', 'move', ({ params, body, user }) => docs.updateShipStatus(+params.id, body, user)],
+
+  // ---------------- ช่องทางขาย + กฎอายุคงเหลือ ----------------
+  ['GET', '/api/channels', 'view', () => exp.listChannels()],
+  ['POST', '/api/channels', 'manage', ({ body }) => exp.saveChannel(body)],
+  ['PUT', '/api/channels/:id', 'manage', ({ params, body }) => exp.saveChannel(body, +params.id)],
+  ['GET', '/api/settings', 'view', () => exp.getSettings()],
+  ['PUT', '/api/settings', 'manage', ({ body }) => exp.saveSettings(body)],
+  ['GET', '/api/expiry/actions', 'view', ({ query }) => exp.expiryActions({ warehouseId: int(query.warehouse_id) })],
+  ['GET', '/api/recall', 'view', ({ query }) => exp.recallReport({ lot_no: query.lot, sku_id: int(query.sku_id) })],
+
+  // ---------------- รอบนับสต็อก (Cycle Count) ----------------
+  ['GET', '/api/counts', 'view', ({ query }) => cnt.listRounds({ limit: int(query.limit, 100) })],
+  ['GET', '/api/counts/:id', 'view', ({ params }) => cnt.roundDetail(+params.id)],
+  ['POST', '/api/counts', 'move', ({ body, user }) => cnt.createRound(body, user)],
+  ['POST', '/api/counts/:id/record', 'move', ({ params, body, user }) => cnt.recordCount(+params.id, body, user)],
+  ['POST', '/api/counts/:id/approve', 'manage', ({ params, user }) => cnt.approveRound(+params.id, user)],
+  ['POST', '/api/counts/:id/cancel', 'manage', ({ params, user }) => cnt.cancelRound(+params.id, user)],
+
   // ---------------- รายงาน ----------------
   ['GET', '/api/reports/inventory', 'view', ({ query }) => rpt.inventorySummary({ group_by: query.group_by, warehouseId: int(query.warehouse_id) })],
   ['GET', '/api/reports/expiry', 'view', ({ query }) => rpt.expiryReport({ warehouseId: int(query.warehouse_id) })],
@@ -198,8 +235,9 @@ export const routes = [
   ['GET', '/api/reports/movements', 'view', ({ query }) => rpt.movementAnalytics({ days: int(query.days, 30), warehouseId: int(query.warehouse_id) })],
   ['GET', '/api/reports/staff', 'view', ({ query }) => rpt.staffPerformance({ days: int(query.days, 30), warehouseId: int(query.warehouse_id) })],
 
-  // ---------------- พิมพ์ป้ายตำแหน่ง ----------------
+  // ---------------- พิมพ์ป้ายตำแหน่ง / ใบส่งสินค้า ----------------
   ['GET', '/labels/location', 'view', async ({ query }) => ({ html: await locationLabels({ rag_id: int(query.rag_id) }) })],
+  ['GET', '/labels/delivery', 'view', async ({ query }) => ({ html: await docs.deliveryNoteHTML(int(query.doc_id)) })],
 ];
 
 /** ตัวกรองของหน้าค้นหาสินค้า (ใช้ร่วมกันระหว่าง API และไฟล์ CSV) */

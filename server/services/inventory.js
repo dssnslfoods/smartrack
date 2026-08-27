@@ -8,10 +8,10 @@ const like = (q) => `%${String(q).trim()}%`;
 const logMovement = async (m) =>
   (await run(
     `INSERT INTO movements (movement_type, item_id, sku_id, lot_no, quantity,
-                            from_location_id, to_location_id, user_id, note)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+                            from_location_id, to_location_id, user_id, note, doc_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
     m.movement_type, m.item_id ?? null, m.sku_id, m.lot_no ?? null, m.quantity ?? null,
-    m.from_location_id ?? null, m.to_location_id ?? null, m.user_id, m.note ?? null,
+    m.from_location_id ?? null, m.to_location_id ?? null, m.user_id, m.note ?? null, m.doc_id ?? null,
   )).lastInsertRowid;
 
 // ---------------------------------------------------------------- ค้นหา
@@ -95,31 +95,33 @@ export async function storeItem(input, user) {
   if (location.status === 'OCCUPIED')
     throw conflict(`ตำแหน่ง ${location.location_code} มีสินค้าอยู่แล้ว — 1 ตำแหน่งเก็บได้ 1 รายการ`, 'LOCATION_OCCUPIED');
 
-  return await tx(async () => {
+  const doStore = async () => {
     const res = await run(
-      `INSERT INTO stock_items (sku_id, location_id, lot_no, exp_date, quantity, note)
-       VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO stock_items (sku_id, location_id, lot_no, exp_date, mfg_date, quantity, note)
+       VALUES (?,?,?,?,?,?,?)`,
       sku.sku_id, location.location_id, input.lot_no?.trim() || null,
-      input.exp_date || null, quantity, input.note?.trim() || null,
+      input.exp_date || null, input.mfg_date || null, quantity, input.note?.trim() || null,
     );
     const itemId = Number(res.lastInsertRowid);
     await run("UPDATE locations SET status = 'OCCUPIED' WHERE location_id = ?", location.location_id);
     await logMovement({
       movement_type: 'STORE', item_id: itemId, sku_id: sku.sku_id, lot_no: input.lot_no?.trim() || null,
-      quantity, to_location_id: location.location_id, user_id: user.user_id, note: input.note?.trim() || null,
+      quantity, to_location_id: location.location_id, user_id: user.user_id,
+      note: input.note?.trim() || null, doc_id: input.doc_id ?? null,
     });
     return await itemDetail(itemId);
-  });
+  };
+  return await tx(doStore);   // tx() เป็น reentrant — เรียกจากในเอกสารได้โดยไม่เปิด Transaction ซ้อน
 }
 
 // ---------------------------------------------------------------- หยิบออก
 /** หยิบสินค้าออกจากตำแหน่ง (ระบุทั้งรายการ หรือหยิบบางส่วนก็ได้) */
-export async function removeItem({ item_id, quantity, note }, user) {
-  return await tx(async () => await removeOne({ item_id, quantity, note }, user));
+export async function removeItem({ item_id, quantity, note, doc_id }, user) {
+  return await tx(async () => await removeOne({ item_id, quantity, note, doc_id }, user));
 }
 
 /** หยิบออก 1 รายการ — ต้องเรียกภายใน await tx() เสมอ */
-async function removeOne({ item_id, quantity, note }, user) {
+async function removeOne({ item_id, quantity, note, doc_id }, user) {
   const item = await getItem(item_id);
   const takeAll = quantity === undefined || quantity === null || quantity === '' || Number(quantity) >= item.quantity;
   const take = takeAll ? item.quantity : Number(quantity);
@@ -143,6 +145,7 @@ async function removeOne({ item_id, quantity, note }, user) {
       movement_type: 'REMOVE', item_id: item.item_id, sku_id: item.sku_id, lot_no: item.lot_no,
       quantity: take, from_location_id: item.location_id, user_id: user.user_id,
       note: [note?.trim(), takeAll ? null : `หยิบบางส่วน (เหลือ ${item.quantity - take})`].filter(Boolean).join(' · ') || null,
+      doc_id: doc_id ?? null,
     });
     return { item_id: item.item_id, removed: take, remaining: takeAll ? 0 : item.quantity - take };
   }
@@ -265,7 +268,7 @@ export async function pickConfirm({ lines, note } = {}, user) {
 
 // ---------------------------------------------------------------- ย้าย
 /** ย้ายสินค้าไปตำแหน่งอื่น */
-export async function moveItem({ item_id, to_location_code, note }, user) {
+export async function moveItem({ item_id, to_location_code, note, doc_id }, user) {
   const item = await getItem(item_id);
   const to = await locationByCode(to_location_code ?? '');
   if (!to) throw notFound(`ไม่พบตำแหน่งปลายทาง ${to_location_code}`);
@@ -281,14 +284,14 @@ export async function moveItem({ item_id, to_location_code, note }, user) {
     await logMovement({
       movement_type: 'MOVE', item_id: item.item_id, sku_id: item.sku_id, lot_no: item.lot_no,
       quantity: item.quantity, from_location_id: from, to_location_id: to.location_id,
-      user_id: user.user_id, note: note?.trim() || null,
+      user_id: user.user_id, note: note?.trim() || null, doc_id: doc_id ?? null,
     });
     return await itemDetail(item.item_id);
   });
 }
 
-/** แก้ไขข้อมูลสินค้าที่จัดเก็บอยู่ (จำนวน / Lot / วันหมดอายุ) — บันทึกประวัติทุกครั้ง */
-export async function editItem({ item_id, quantity, lot_no, exp_date, note }, user) {
+/** แก้ไขข้อมูลสินค้าที่จัดเก็บอยู่ (จำนวน / Lot / วันผลิต / วันหมดอายุ) — บันทึกประวัติทุกครั้ง */
+export async function editItem({ item_id, quantity, lot_no, exp_date, mfg_date, note, doc_id }, user) {
   const item = await getItem(item_id);
   const newQty = quantity === undefined || quantity === null || quantity === '' ? item.quantity : Number(quantity);
   if (!Number.isFinite(newQty) || newQty < 0) throw badRequest('จำนวนไม่ถูกต้อง');
@@ -297,18 +300,25 @@ export async function editItem({ item_id, quantity, lot_no, exp_date, note }, us
   if (newQty !== item.quantity) changes.push(`จำนวน ${item.quantity} → ${newQty}`);
   if (lot_no !== undefined && (lot_no || null) !== item.lot_no) changes.push(`Lot ${item.lot_no ?? '-'} → ${lot_no || '-'}`);
   if (exp_date !== undefined && (exp_date || null) !== item.exp_date) changes.push(`วันหมดอายุ ${item.exp_date ?? '-'} → ${exp_date || '-'}`);
+  if (mfg_date !== undefined && (mfg_date || null) !== item.mfg_date) changes.push(`วันผลิต ${item.mfg_date ?? '-'} → ${mfg_date || '-'}`);
   if (!changes.length) return await itemDetail(item.item_id);
 
   return await tx(async () => {
     await run(
-      `UPDATE stock_items SET quantity=?, lot_no=?, exp_date=?, updated_at=(now() AT TIME ZONE 'Asia/Bangkok') WHERE item_id=?`,
+      `UPDATE stock_items SET quantity=?, lot_no=?, exp_date=?, mfg_date=?, updated_at=(now() AT TIME ZONE 'Asia/Bangkok') WHERE item_id=?`,
       newQty, lot_no !== undefined ? lot_no || null : item.lot_no,
-      exp_date !== undefined ? exp_date || null : item.exp_date, item.item_id,
+      exp_date !== undefined ? exp_date || null : item.exp_date,
+      mfg_date !== undefined ? mfg_date || null : item.mfg_date, item.item_id,
     );
+    // นับเป็นศูนย์ = ตำแหน่งนั้นว่างจริง — ปิดรายการและคืนตำแหน่ง
+    if (newQty === 0) {
+      await run(`UPDATE stock_items SET status='REMOVED', location_id=NULL WHERE item_id=?`, item.item_id);
+      await run("UPDATE locations SET status='EMPTY' WHERE location_id = ?", item.location_id);
+    }
     await logMovement({
       movement_type: 'EDIT', item_id: item.item_id, sku_id: item.sku_id, lot_no: item.lot_no, quantity: newQty,
-      from_location_id: item.location_id, to_location_id: item.location_id, user_id: user.user_id,
-      note: [changes.join(' · '), note?.trim()].filter(Boolean).join(' — '),
+      from_location_id: item.location_id, to_location_id: newQty === 0 ? null : item.location_id, user_id: user.user_id,
+      note: [changes.join(' · '), note?.trim()].filter(Boolean).join(' — '), doc_id: doc_id ?? null,
     });
     return await itemDetail(item.item_id);
   });
@@ -335,14 +345,18 @@ export async function listMovements(f = {}) {
     where.push('zf.warehouse_id = ?');
     params.push(Number(f.warehouse_id));
   }
+  if (f.doc_id) { where.push('m.doc_id = ?'); params.push(Number(f.doc_id)); }
+  if (f.lot_no) { where.push('m.lot_no = ?'); params.push(f.lot_no); }
   return await all(
     `SELECT m.*, s.sku_code, s.sku_name, s.unit, u.full_name AS user_name,
-            lf.location_code AS from_code, lt.location_code AS to_code
+            lf.location_code AS from_code, lt.location_code AS to_code,
+            d.doc_no, d.doc_type, d.ref_no AS doc_ref, d.party AS doc_party
        FROM movements m
        JOIN skus s ON s.sku_id = m.sku_id
        LEFT JOIN users u ON u.user_id = m.user_id
        LEFT JOIN locations lf ON lf.location_id = m.from_location_id
        LEFT JOIN locations lt ON lt.location_id = m.to_location_id
+       LEFT JOIN documents d ON d.doc_id = m.doc_id
        ${joins.join(' ')}
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY m.movement_id DESC LIMIT ?`,

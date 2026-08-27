@@ -1,6 +1,6 @@
 // ค้นหาสินค้า — ตอบคำถามหลัก "สินค้าตัวนี้อยู่ที่ไหน"
 import { api, auth, wh, download } from '../api.js';
-import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR } from '../ui.js';
+import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill } from '../ui.js?v=26';
 import { itemActions } from '../actions.js';
 
 async function checkEmptyLocation(q) {
@@ -102,6 +102,7 @@ export async function searchView({ params }) {
         { label: 'Lot', key: 'lot_no', mono: true },
         { label: 'จำนวน', value: (r) => `${fmtNum(r.quantity)} ${r.unit}`, num: true },
         { label: 'วันหมดอายุ', value: (r) => (r.exp_date ? h('div', {}, r.exp_date, ' ', expiryPill(r.expiry)) : '—') },
+        { label: '% อายุ', value: (r) => pctPill(r.pct_remaining) },
         { label: 'หมายเหตุ', value: (r) => (r.needs_forklift ? pill('ชั้นสูง — ใช้รถยก', 'blue') : null) },
         { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => detail(r) }, 'รายละเอียด') },
       ], rows));

@@ -1,6 +1,6 @@
 // การทำรายการกับสินค้าที่จัดเก็บอยู่ — ใช้ร่วมกันทั้งหน้าค้นหาและหน้าแผนผัง
 import { api, auth } from './api.js';
-import { h, field, modal, toast, fmtNum } from './ui.js';
+import { h, field, modal, toast, fmtNum } from './ui.js?v=26';
 
 /** หยิบสินค้าออกจากตำแหน่ง (ทั้งหมดหรือบางส่วน) */
 export function removeItemDialog(item, onDone) {
@@ -64,20 +64,22 @@ export async function moveItemDialog(item, onDone) {
 export function editItemDialog(item, onDone) {
   const qty = h('input', { type: 'number', min: '0', value: String(item.quantity) });
   const lot = h('input', { value: item.lot_no ?? '' });
+  const mfg = h('input', { type: 'date', value: item.mfg_date ?? '' });
   const exp = h('input', { type: 'date', value: item.exp_date ?? '' });
   const note = h('input', { placeholder: 'เหตุผลในการแก้ไข (ถ้ามี)' });
 
   const m = modal(`แก้ไขข้อมูล — ${item.sku_name}`,
     h('div', {},
       h('p', { class: 'muted' }, `ตำแหน่ง ${item.location_code} · การแก้ไขจะถูกบันทึกไว้ในประวัติ`),
-      h('div', { class: 'row' }, field('จำนวน', qty), field('Lot / รุ่นการผลิต', lot), field('วันหมดอายุ', exp)),
+      h('div', { class: 'row' }, field('จำนวน', qty), field('Lot / รุ่นการผลิต', lot)),
+      h('div', { class: 'row' }, field('วันผลิต (MFG)', mfg), field('วันหมดอายุ (EXP)', exp)),
       field('หมายเหตุ', note)),
     [
       h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
       h('button', { class: 'btn primary', onclick: async () => {
         try {
           await api.put(`/api/items/${item.item_id}`, {
-            quantity: Number(qty.value), lot_no: lot.value.trim(), exp_date: exp.value, note: note.value.trim(),
+            quantity: Number(qty.value), lot_no: lot.value.trim(), mfg_date: mfg.value, exp_date: exp.value, note: note.value.trim(),
           });
           toast('บันทึกการแก้ไขแล้ว'); m.close(); onDone?.();
         } catch (err) { toast(err.message, 'err'); }

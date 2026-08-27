@@ -1,23 +1,33 @@
 // โครงหลักของแอป: เมนู · ช่องค้นหาด้านบน · การสลับหน้า
 import { api, auth, wh } from './api.js';
-import { h, $ } from './ui.js';
+import { h, $ } from './ui.js?v=26';
 import { loginView } from './views/login.js';
 import { dashboardView } from './views/dashboard.js';
-import { searchView } from './views/search.js?v=22';
-import { pickView } from './views/pick.js';
-import { overviewView, rackView } from './views/map.js';
+import { searchView } from './views/search.js?v=26';
+import { pickView } from './views/pick.js?v=26';
+import { overviewView, rackView } from './views/map.js?v=26';
 import { historyView } from './views/history.js';
-import { settingsView } from './views/settings.js?v=22';
+import { settingsView } from './views/settings.js?v=26';
 import { reportsView } from './views/reports.js';
 import { warehouseListView, warehouseLayoutView } from './views/layout.js';
+import { inboundView } from './views/inbound.js?v=26';
+import { outboundView } from './views/outbound.js?v=26';
+import { docsView } from './views/docs.js?v=26';
+import { expiryView } from './views/expiry.js?v=26';
+import { countView } from './views/count.js?v=26';
 
 const NAV = [
   { path: '#/', icon: '🏠', label: 'หน้าแรก' },
   { path: '#/search', icon: '🔍', label: 'ค้นหาสินค้า' },
+  { path: '#/inbound', icon: '📥', label: 'รับเข้า (GRN)', sec: 'งานคลัง' },
   { path: '#/pick', icon: '📤', label: 'วางแผนหยิบสินค้า' },
-  { path: '#/map', icon: '🗺️', label: 'แผนผังชั้นวาง' },
+  { path: '#/outbound', icon: '🚚', label: 'งานจ่ายออก' },
+  { path: '#/docs', icon: '📋', label: 'โอน / คืน / ตัดเสีย' },
+  { path: '#/count', icon: '🔢', label: 'นับสต็อก' },
+  { path: '#/map', icon: '🗺️', label: 'แผนผังชั้นวาง', sec: 'คลังสินค้า' },
   { path: '#/history', icon: '🕘', label: 'ประวัติการเคลื่อนย้าย' },
-  { path: '#/reports', icon: '📊', label: 'รายงาน', sec: 'ผู้บริหาร' },
+  { path: '#/expiry', icon: '⚠️', label: 'อายุสินค้า & Recall', sec: 'ผู้บริหาร' },
+  { path: '#/reports', icon: '📊', label: 'รายงาน' },
   { path: '#/layout', icon: '🏗️', label: 'ผังคลังสินค้า', sec: 'ตั้งค่าระบบ' },
   { path: '#/settings', icon: '⚙️', label: 'ข้อมูลหลัก', perm: 'manage' },
 ];
@@ -26,6 +36,12 @@ const ROUTES = [
   [/^#\/?$/, dashboardView],
   [/^#\/search/, searchView],
   [/^#\/pick/, pickView],
+  [/^#\/inbound/, inboundView],
+  [/^#\/outbound/, outboundView],
+  [/^#\/docs/, docsView],
+  [/^#\/expiry/, expiryView],
+  [/^#\/count$/, countView],
+  [/^#\/count\/(\d+)/, countView],
   [/^#\/map$/, overviewView],
   [/^#\/map\/(\d+)/, rackView],
   [/^#\/history/, historyView],

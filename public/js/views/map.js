@@ -1,6 +1,6 @@
 // แผนผังคลัง — ผังพื้นคลังเลือก RACK + แผนผัง RACK รายตัว (ชั้น × ความลึก) + จัดเก็บสินค้า
 import { api, auth, wh, openLabels } from '../api.js';
-import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table } from '../ui.js';
+import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table } from '../ui.js?v=26';
 import { itemActions } from '../actions.js';
 
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
@@ -251,6 +251,7 @@ export async function rackView({ match, params }) {
       ...skus.map((s) => h('option', { value: s.sku_id }, `${s.sku_code} — ${s.sku_name} (${s.unit})`)));
     const qty = h('input', { type: 'number', min: '1', value: '1' });
     const lot = h('input', { placeholder: 'เช่น L2026-08-01' });
+    const mfg = h('input', { type: 'date' });
     const exp = h('input', { type: 'date' });
     const note = h('input', { placeholder: 'หมายเหตุ (ถ้ามี)' });
 
@@ -273,8 +274,9 @@ export async function rackView({ match, params }) {
           field('จำนวน *', qty),
           field('Lot / รุ่นการผลิต', lot)),
         h('div', { class: 'grid g2' },
-          field('วันหมดอายุ', exp),
-          field('หมายเหตุ', note)),
+          field('วันผลิต (MFG)', mfg),
+          field('วันหมดอายุ (EXP)', exp)),
+        field('หมายเหตุ', note),
         history),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
@@ -298,6 +300,7 @@ export async function rackView({ match, params }) {
               location_code: c.location_code,
               quantity: Number(qty.value),
               lot_no: lot.value.trim() || null,
+              mfg_date: mfg.value || null,
               exp_date: exp.value || null,
               note: note.value.trim() || null,
             });
