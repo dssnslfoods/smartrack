@@ -126,7 +126,9 @@ const server = createServer(async (req, res) => {
 
     const user = await userFromRequest(req);
     if (hit.route.perm) requirePerm(user, hit.route.perm);
-    const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
+    // งาน AI ต้องแนบรูป/PDF แบบ base64 จึงต้องรับ body ใหญ่กว่าปกติ
+    const bodyLimit = url.pathname.startsWith('/api/ai/') ? 24 * 1024 * 1024 : undefined;
+    const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req, bodyLimit) : {};
     const result = await hit.route.handler({ req, res, params: hit.params, query, body, user });
 
     // หน้าพิมพ์ป้าย คืนเป็น HTML

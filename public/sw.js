@@ -1,6 +1,6 @@
 // Service Worker — Offline Mode: ค้นหาสินค้า/ดูแผนผังได้แม้เน็ตขัดข้อง
-const SHELL = 'rack-shell-v29';
-const DATA = 'rack-data-v29';
+const SHELL = 'rack-shell-v30';
+const DATA = 'rack-data-v30';
 const SHELL_FILES = [
   '/', '/index.html', '/css/app.css',
   '/js/app.js', '/js/api.js', '/js/ui.js', '/js/actions.js',
@@ -8,7 +8,7 @@ const SHELL_FILES = [
   '/js/views/pick.js', '/js/views/map.js', '/js/views/history.js', '/js/views/reports.js',
   '/js/views/layout.js', '/js/views/settings.js',
   '/js/views/inbound.js', '/js/views/outbound.js', '/js/views/docs.js',
-  '/js/views/expiry.js', '/js/views/count.js',
+  '/js/views/expiry.js', '/js/views/count.js', '/js/views/ai.js',
   '/manifest.webmanifest',
   '/img/deleaf-logo.png', '/img/deleaf-icon.png',
 ];

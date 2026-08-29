@@ -9,6 +9,8 @@ import * as wh from '../services/warehouses.js';
 import * as docs from '../services/documents.js';
 import * as exp from '../services/expiry.js';
 import * as cnt from '../services/counting.js';
+import * as intel from '../services/intelligence.js';
+import * as ai from '../services/ai.js';
 import { locationLabels } from '../services/labels.js';
 
 /** [method, path, สิทธิ์ที่ต้องมี (null = ไม่ต้องล็อกอิน), handler] */
@@ -235,6 +237,30 @@ export const routes = [
   ['GET', '/api/reports/space', 'view', ({ query }) => rpt.spaceUtilization({ warehouseId: int(query.warehouse_id) })],
   ['GET', '/api/reports/movements', 'view', ({ query }) => rpt.movementAnalytics({ days: int(query.days, 30), warehouseId: int(query.warehouse_id) })],
   ['GET', '/api/reports/staff', 'view', ({ query }) => rpt.staffPerformance({ days: int(query.days, 30), warehouseId: int(query.warehouse_id) })],
+
+  // ---------------- วิเคราะห์เชิงลึก (คำนวณล้วน ไม่ต้องเปิด AI ก็ใช้ได้) ----------------
+  ['GET', '/api/insights/expiry', 'view', ({ query }) => intel.expiryRisk({
+    warehouseId: int(query.warehouse_id), lookbackDays: int(query.lookback, 90), horizonDays: int(query.horizon, 180) })],
+  ['GET', '/api/insights/slotting', 'view', ({ query }) => intel.slotting({
+    warehouseId: int(query.warehouse_id), days: int(query.days, 90) })],
+  ['GET', '/api/insights/forecast', 'view', ({ query }) => intel.demandForecast({
+    warehouseId: int(query.warehouse_id), weeks: int(query.weeks, 12), leadTimeDays: int(query.lead_time, 21) })],
+  ['GET', '/api/insights/anomalies', 'view', ({ query }) => intel.anomalies({
+    warehouseId: int(query.warehouse_id), days: int(query.days, 60) })],
+  ['GET', '/api/insights/labor', 'view', ({ query }) => intel.laborPlan({
+    warehouseId: int(query.warehouse_id), days: int(query.days, 60) })],
+
+  // ---------------- ผู้ช่วย AI ----------------
+  ['GET', '/api/ai/status', 'view', () => ({ enabled: ai.aiEnabled() })],
+  ['POST', '/api/ai/ask', 'view', ({ body, user }) => ai.copilotAsk({
+    messages: body.messages, warehouseId: int(body.warehouse_id), warehouseName: body.warehouse_name }, user)],
+  ['POST', '/api/ai/scan-receiving', 'move', ({ body }) => ai.scanReceivingDoc({ files: body.files })],
+  ['GET', '/api/ai/brief', 'view', ({ query }) => ai.dailyBrief({
+    warehouseId: int(query.warehouse_id), warehouseName: query.warehouse_name })],
+  ['GET', '/api/ai/explain', 'view', ({ query }) => ai.explain({
+    topic: query.topic, warehouseId: int(query.warehouse_id) })],
+  ['POST', '/api/ai/vision-count', 'move', ({ body }) => ai.visionCount({
+    image: body.image, expected: body.expected, sku_name: body.sku_name, location_code: body.location_code })],
 
   // ---------------- พิมพ์ป้ายตำแหน่ง / ใบส่งสินค้า ----------------
   ['GET', '/labels/location', 'view', async ({ query }) => ({ html: await locationLabels({ rag_id: int(query.rag_id) }) })],

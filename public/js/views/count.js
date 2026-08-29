@@ -1,6 +1,6 @@
 // นับสต็อก (Cycle Count) — เปิดรอบ → สแกนตำแหน่ง+กรอกจำนวน → เทียบผลต่าง → อนุมัติปรับยอด
 import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput } from '../ui.js?v=29';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles } from '../ui.js?v=30';
 
 const RSTATUS = { OPEN: ['กำลังนับ', 'blue'], APPROVED: ['อนุมัติแล้ว', 'green'], CANCELLED: ['ยกเลิก', 'gray'] };
 
@@ -83,6 +83,7 @@ async function roundList() {
 // ================= หน้านับของรอบหนึ่ง ๆ =================
 async function roundDetail(roundId) {
   let data = await api.get(`/api/counts/${roundId}`);
+  const aiOn = (await api.get('/api/ai/status').catch(() => ({ enabled: false }))).enabled;
   const progressEl = h('div', { class: 'grid g4', style: 'margin-bottom:14px' });
   const tbl = h('div', {});
   const onlyPending = h('input', { type: 'checkbox', onchange: () => render() });
@@ -145,6 +146,51 @@ async function roundDetail(roundId) {
     } catch (err) { toast(err.message, 'err'); }
   }
 
+  // ---- นับจากรูปถ่าย: AI ช่วยประมาณ แล้วเติมช่องจำนวนให้คนตรวจก่อนบันทึก ----
+  async function countFromPhoto() {
+    const code = locInput.value.trim().toUpperCase();
+    if (!code) { toast('สแกนหรือพิมพ์รหัสตำแหน่งก่อน แล้วค่อยถ่ายรูป', 'err'); locInput.focus(); return; }
+    const line = data.lines.find((l) => String(l.location_code).toUpperCase() === code);
+
+    let files;
+    try { files = await pickFiles({ accept: 'image/*', capture: 'environment' }); }
+    catch (err) { toast(err.message, 'err'); return; }
+    if (!files.length) return;
+
+    toast('🧠 กำลังนับจากรูป…');
+    try {
+      const r = await api.post('/api/ai/vision-count', {
+        image: files[0], expected: line?.expected_qty ?? null,
+        sku_name: line?.sku_name ?? null, location_code: code,
+      });
+      const conf = { HIGH: ['มั่นใจสูง', 'green'], MEDIUM: ['มั่นใจปานกลาง', 'amber'], LOW: ['มั่นใจต่ำ', 'red'] }[r.confidence] ?? ['-', 'gray'];
+      const m = modal(`นับจากรูป — ${code}`,
+        h('div', {},
+          h('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px' },
+            h('div', { style: 'font-size:34px;font-weight:800;color:var(--brand)' }, fmtNum(r.counted)),
+            h('div', {}, pill(...conf),
+              r.expected !== null ? h('div', { class: 'muted', style: 'font-size:13px;margin-top:3px' },
+                `ระบบบันทึกไว้ ${fmtNum(r.expected)} · ต่าง ${r.variance > 0 ? '+' : ''}${fmtNum(r.variance)}`) : null)),
+          h('img', { src: files[0], style: 'width:100%;max-height:230px;object-fit:contain;border:1px solid var(--line);border-radius:8px;margin-bottom:10px' }),
+          h('p', { style: 'font-size:14px' }, h('strong', {}, 'วิธีนับ: '), r.counting_basis),
+          r.visible_labels?.length ? h('p', { style: 'font-size:13px' },
+            h('strong', {}, 'ป้ายที่อ่านได้: '), r.visible_labels.join(' · ')) : null,
+          r.obstacles?.length ? h('div', { class: 'note', style: 'background:#fffbeb;border-color:#fcd34d;color:#92400e' },
+            h('div', { style: 'font-weight:700;margin-bottom:3px' }, 'อุปสรรคในการนับ'),
+            h('ul', { style: 'margin:0;padding-left:20px;font-weight:400' }, ...r.obstacles.map((o) => h('li', {}, o)))) : null,
+          h('p', { class: 'muted', style: 'font-size:12.5px;margin-top:10px' }, `ℹ️ ${r.disclaimer}`)),
+        [
+          h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
+          h('button', { class: 'btn primary', onclick: () => {
+            qtyInput.value = String(r.counted);
+            noteInput.value = `นับจากรูป (${r.confidence}) — ${r.counting_basis}`.slice(0, 200);
+            m.close(); qtyInput.focus(); qtyInput.select();
+            toast('เติมจำนวนให้แล้ว — ตรวจสอบแล้วกดบันทึก');
+          } }, '✓ ใช้ตัวเลขนี้'),
+        ]);
+    } catch (err) { toast(err.message, 'err'); }
+  }
+
   async function approve() {
     const ok = await confirmBox('อนุมัติรอบนับ',
       `ระบบจะปรับยอดทุกตำแหน่งที่มีผลต่าง (${data.progress.variance} ตำแหน่ง) เป็นเอกสารปรับยอด และปิดรอบนับนี้`,
@@ -181,7 +227,8 @@ async function roundDetail(roundId) {
         h('div', { style: 'flex:2' }, field('ตำแหน่ง', locInput)),
         h('div', { style: 'flex:1' }, field('นับได้', qtyInput)),
         h('div', { style: 'flex:2' }, field('หมายเหตุ', noteInput)),
-        h('div', { style: 'flex:0;align-self:flex-end' },
+        h('div', { style: 'flex:0;align-self:flex-end;display:flex;gap:6px' },
+          aiOn ? h('button', { class: 'btn', title: 'ถ่ายรูปหน้าชั้นวางให้ AI ช่วยนับ', onclick: countFromPhoto }, '📷 นับจากรูป') : null,
           h('button', { class: 'btn primary', onclick: submitCount }, 'บันทึก')))) : null,
     h('div', { class: 'card' },
       h('div', { class: 'card-head' },

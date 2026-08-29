@@ -1,9 +1,13 @@
 // รับสินค้าเข้าคลัง (GRN) — หลายรายการ/หลาย Lot ต่อใบ + QC + อ้างอิงเลข PO
 import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal } from '../ui.js?v=29';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles } from '../ui.js?v=30';
 
 export async function inboundView() {
-  const [skus, zones] = await Promise.all([api.get('/api/skus'), api.get('/api/zones')]);
+  const [skus, zones, aiStatus] = await Promise.all([
+    api.get('/api/skus'), api.get('/api/zones'),
+    api.get('/api/ai/status').catch(() => ({ enabled: false })),
+  ]);
+  const aiOn = aiStatus.enabled;
   const skuById = new Map(skus.map((s) => [String(s.sku_id), s]));
   let empties = [];
   api.get('/api/locations', { limit: 500 }).then((r) => { empties = r; });
@@ -70,8 +74,12 @@ export async function inboundView() {
       }, { multi: true }),
     }, '🗺️ เลือกหลายตำแหน่ง');
 
-    const line = { sel, unitSel, qty, lot, mfg, exp, loc };
+    // แถบบอกที่มาของข้อมูลเมื่อบรรทัดนี้มาจากการสแกนเอกสารด้วย AI
+    const hint = h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:8px' });
+
+    const line = { sel, unitSel, qty, lot, mfg, exp, loc, hint };
     const row = h('div', { class: 'card', style: 'padding:12px;margin-bottom:10px' },
+      hint,
       h('div', { class: 'grid g2' }, field('สินค้า *', sel),
         field('ตำแหน่งจัดเก็บ *', h('div', { style: 'display:flex;gap:6px' }, loc, pickBtn))),
       h('div', { class: 'row', style: 'flex-wrap:wrap' },
@@ -80,10 +88,68 @@ export async function inboundView() {
         h('div', { style: 'flex:0;align-self:flex-end' },
           h('button', { class: 'btn ghost', onclick: () => { lines.splice(lines.indexOf(line), 1); row.remove(); } }, '🗑️'))),
       sugg);
+    line.row = row;
     lines.push(line);
     linesBox.append(row);
   }
   addLine();
+
+  // ---------------- สแกนใบส่งของด้วย AI ----------------
+  // AI อ่านเอกสารแล้วเติมฟอร์มให้เท่านั้น — ไม่บันทึกอะไร คนต้องตรวจและกดบันทึกเอง
+  const scanStatus = h('div', {});
+
+  async function scanDoc(capture) {
+    let files;
+    try {
+      files = await pickFiles({ accept: 'image/*,application/pdf', multiple: true, capture });
+    } catch (err) { toast(err.message, 'err'); return; }
+    if (!files.length) return;
+
+    scanStatus.replaceChildren(h('div', { class: 'note' , style: 'background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a' },
+      `🧠 กำลังอ่านเอกสาร ${files.length} ไฟล์…`));
+    try {
+      const r = await api.post('/api/ai/scan-receiving', { files });
+      applyScan(r);
+    } catch (err) {
+      scanStatus.replaceChildren(h('div', { class: 'note bad' }, `อ่านเอกสารไม่สำเร็จ: ${err.message}`));
+    }
+  }
+
+  function applyScan(r) {
+    if (r.ref_no && !refNo.value) refNo.value = r.ref_no;
+    if (r.party && !party.value) party.value = r.party;
+
+    // ล้างบรรทัดว่างที่ยังไม่ได้กรอก แล้วเติมจากผลอ่าน
+    if (r.lines.length) {
+      const blank = lines.filter((l) => !l.sel.value && !l.qty.value.replace(/^1$/, '') && !l.lot.value);
+      blank.forEach((l) => { lines.splice(lines.indexOf(l), 1); l.row?.remove(); });
+
+      for (const src of r.lines) {
+        addLine();
+        const ln = lines[lines.length - 1];
+        if (src.sku_id) { ln.sel.value = String(src.sku_id); ln.sel.dispatchEvent(new Event('change')); }
+        if (src.quantity) ln.qty.value = String(src.quantity);
+        if (src.lot_no) ln.lot.value = src.lot_no;
+        if (src.mfg_date) ln.mfg.value = src.mfg_date;
+        if (src.exp_date) ln.exp.value = src.exp_date;
+        if (src.needs_review) ln.row?.classList.add('needs-review');
+        ln.hint.replaceChildren(...[
+          h('span', { class: 'muted' }, `📄 อ่านจากเอกสาร: "${src.raw_text}"`),
+          src.confidence !== 'HIGH' ? pill(`ความมั่นใจ ${src.confidence === 'LOW' ? 'ต่ำ' : 'ปานกลาง'}`, src.confidence === 'LOW' ? 'red' : 'amber') : null,
+          src.note ? h('span', { style: 'color:#b45309' }, `⚠️ ${src.note}`) : null,
+        ].filter(Boolean));
+      }
+    }
+
+    scanStatus.replaceChildren(
+      h('div', { class: r.stats.needs_review ? 'note' : 'note ok',
+        style: r.stats.needs_review ? 'background:#fffbeb;border-color:#fcd34d;color:#92400e' : '' },
+        `${r.stats.needs_review ? '⚠️' : '✅'} อ่านได้ ${r.stats.total} รายการ · จับคู่สินค้าได้ ${r.stats.matched} รายการ`
+        + (r.stats.needs_review ? ` · ต้องตรวจ ${r.stats.needs_review} รายการ` : '')),
+      ...(r.warnings ?? []).map((w) => h('div', { class: 'muted', style: 'font-size:13px;margin-top:6px' }, `• ${w}`)),
+      h('div', { class: 'muted', style: 'font-size:13px;margin-top:8px' },
+        'ℹ️ ระบบยังไม่ได้บันทึกอะไร — กรุณาตรวจทุกบรรทัด เลือกตำแหน่งจัดเก็บ แล้วกดบันทึกใบรับเข้าเอง'));
+  }
 
   // ---------------- บันทึก ----------------
   const recent = h('div', {});
@@ -154,6 +220,16 @@ export async function inboundView() {
       h('div', {}, h('h1', {}, 'รับสินค้าเข้าคลัง (GRN)'),
         h('p', {}, 'บันทึกหลายรายการ/หลาย Lot ในใบเดียว พร้อมผลตรวจ QC และอ้างอิงเลข PO'))),
     auth.can('move') ? h('div', {},
+      aiOn ? h('div', { class: 'card', style: 'border-left:4px solid var(--brand)' },
+        h('div', { class: 'card-head' },
+          h('div', {},
+            h('h2', {}, '📷 สแกนใบส่งของด้วย AI'),
+            h('p', { class: 'muted', style: 'margin:2px 0 0;font-size:13.5px' },
+              'ถ่ายรูปหรือแนบไฟล์ใบส่งของ/PO แล้ว AI จะอ่านรายการมาเติมให้ — ตรวจก่อนบันทึกเสมอ')),
+          h('div', { class: 'actions' },
+            h('button', { class: 'btn', onclick: () => scanDoc('environment') }, '📷 ถ่ายรูป'),
+            h('button', { class: 'btn primary', onclick: () => scanDoc(null) }, '📎 แนบไฟล์'))),
+        scanStatus) : null,
       h('div', { class: 'card' },
         h('h2', {}, '1. ข้อมูลเอกสาร'),
         h('div', { class: 'grid g2' }, field('เลขที่ PO อ้างอิง', refNo), field('ผู้ขาย / Supplier', party)),

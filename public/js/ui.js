@@ -273,3 +273,49 @@ export function scanInput(placeholder, onScan, { autofocus = true } = {}) {
   if (autofocus) setTimeout(() => input.focus(), 60);
   return input;
 }
+
+/**
+ * เปิดหน้าต่างเลือกไฟล์ แล้วคืนไฟล์เป็น data URL (base64) พร้อมส่งให้ AI อ่าน
+ * รูปที่ใหญ่เกินจะถูกย่อลงก่อนอัตโนมัติ เพื่อไม่ให้อัปโหลดช้าและประหยัดค่า AI
+ * @returns {Promise<string[]>} รายการ data URL — อาร์เรย์ว่างถ้าผู้ใช้ยกเลิก
+ */
+export function pickFiles({ accept = 'image/*', multiple = false, capture = null, maxPixels = 2200 } = {}) {
+  return new Promise((resolve) => {
+    const inp = h('input', { type: 'file', accept, style: 'display:none' });
+    if (multiple) inp.multiple = true;
+    if (capture) inp.capture = capture;
+    inp.onchange = async () => {
+      const files = [...(inp.files ?? [])].slice(0, 5);
+      inp.remove();
+      resolve(files.length ? await Promise.all(files.map((f) => fileToDataUrl(f, maxPixels))) : []);
+    };
+    // บางเบราว์เซอร์ไม่ยิง change เมื่อกดยกเลิก — ปล่อยให้ค้างไว้ ไม่ resolve จนกว่าจะเลือกจริง
+    document.body.append(inp);
+    inp.click();
+  });
+}
+
+/** อ่านไฟล์เป็น data URL — ย่อรูปที่ใหญ่เกิน maxPixels ด้านยาว (PDF ส่งตามเดิม) */
+export function fileToDataUrl(file, maxPixels = 2200) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error(`อ่านไฟล์ ${file.name} ไม่สำเร็จ`));
+    fr.onload = () => {
+      const url = String(fr.result);
+      if (!file.type.startsWith('image/') || file.type === 'image/gif') return resolve(url);
+      const img = new Image();
+      img.onerror = () => resolve(url);
+      img.onload = () => {
+        const scale = Math.min(1, maxPixels / Math.max(img.width, img.height));
+        if (scale >= 1) return resolve(url);
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * scale);
+        cv.height = Math.round(img.height * scale);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        resolve(cv.toDataURL('image/jpeg', 0.88));
+      };
+      img.src = url;
+    };
+    fr.readAsDataURL(file);
+  });
+}

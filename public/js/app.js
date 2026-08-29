@@ -1,20 +1,21 @@
 // โครงหลักของแอป: เมนู · ช่องค้นหาด้านบน · การสลับหน้า
 import { api, auth, wh } from './api.js';
-import { h, $ } from './ui.js?v=29';
+import { h, $ } from './ui.js?v=30';
 import { loginView } from './views/login.js';
 import { dashboardView } from './views/dashboard.js';
-import { searchView } from './views/search.js?v=29';
-import { pickView } from './views/pick.js?v=29';
-import { overviewView, rackView } from './views/map.js?v=29';
+import { searchView } from './views/search.js?v=30';
+import { pickView } from './views/pick.js?v=30';
+import { overviewView, rackView } from './views/map.js?v=30';
 import { historyView } from './views/history.js';
-import { settingsView } from './views/settings.js?v=29';
+import { settingsView } from './views/settings.js?v=30';
 import { reportsView } from './views/reports.js';
 import { warehouseListView, warehouseLayoutView } from './views/layout.js';
-import { inboundView } from './views/inbound.js?v=29';
-import { outboundView } from './views/outbound.js?v=29';
-import { docsView } from './views/docs.js?v=29';
-import { expiryView } from './views/expiry.js?v=29';
-import { countView } from './views/count.js?v=29';
+import { inboundView } from './views/inbound.js?v=30';
+import { outboundView } from './views/outbound.js?v=30';
+import { docsView } from './views/docs.js?v=30';
+import { expiryView } from './views/expiry.js?v=30';
+import { countView } from './views/count.js?v=30';
+import { copilotView, insightsView } from './views/ai.js?v=30';
 
 const NAV = [
   { path: '#/', icon: '🏠', label: 'หน้าแรก' },
@@ -26,6 +27,8 @@ const NAV = [
   { path: '#/count', icon: '🔢', label: 'นับสต็อก' },
   { path: '#/map', icon: '🗺️', label: 'แผนผังชั้นวาง', sec: 'คลังสินค้า' },
   { path: '#/history', icon: '🕘', label: 'ประวัติการเคลื่อนย้าย' },
+  { path: '#/copilot', icon: '💬', label: 'ผู้ช่วย AI', sec: 'AI' },
+  { path: '#/insights', icon: '🧠', label: 'AI Insights' },
   { path: '#/expiry', icon: '⚠️', label: 'อายุสินค้า & Recall', sec: 'ผู้บริหาร' },
   { path: '#/reports', icon: '📊', label: 'รายงาน' },
   { path: '#/layout', icon: '🏗️', label: 'ผังคลังสินค้า', sec: 'ตั้งค่าระบบ' },
@@ -39,6 +42,8 @@ const ROUTES = [
   [/^#\/inbound/, inboundView],
   [/^#\/outbound/, outboundView],
   [/^#\/docs/, docsView],
+  [/^#\/copilot/, copilotView],
+  [/^#\/insights/, insightsView],
   [/^#\/expiry/, expiryView],
   [/^#\/count$/, countView],
   [/^#\/count\/(\d+)/, countView],

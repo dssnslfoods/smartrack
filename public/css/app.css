@@ -309,3 +309,6 @@ details.card > summary:hover { color: var(--brand); }
   .floor-hint { display: none; }
 }
 @media (min-width: 901px) { .menu-toggle { display: none; } }
+
+/* ---------- AI: บรรทัดที่อ่านจากเอกสารแล้วต้องให้คนตรวจก่อน ---------- */
+.needs-review { border-left: 4px solid #f59e0b; background: #fffdf7; }
