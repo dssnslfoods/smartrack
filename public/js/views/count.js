@@ -1,6 +1,6 @@
 // นับสต็อก (Cycle Count) — เปิดรอบ → สแกนตำแหน่ง+กรอกจำนวน → เทียบผลต่าง → อนุมัติปรับยอด
-import { api, auth } from '../api.js?v=44';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles, progress as aiProgress } from '../ui.js?v=44';
+import { api, auth } from '../api.js?v=45';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles, progress as aiProgress } from '../ui.js?v=45';
 
 const RSTATUS = { OPEN: ['กำลังนับ', 'blue'], APPROVED: ['อนุมัติแล้ว', 'green'], CANCELLED: ['ยกเลิก', 'gray'] };
 const CONF = { HIGH: ['มั่นใจสูง', 'green'], MEDIUM: ['มั่นใจปานกลาง', 'amber'], LOW: ['มั่นใจต่ำ', 'red'] };
@@ -137,38 +137,70 @@ async function roundDetail(roundId) {
   let shotsFor = null;           // รูปชุดนี้เป็นของตำแหน่งไหน
   const shotsBox = h('div', {});
 
-  const shotsTotal = () => shots.reduce((sum, s) => sum + s.counted, 0);
+  // นับเฉพาะรูปที่ติ๊กเลือกไว้ — บางรูปถ่ายซ้ำมุมเดิม ถ้ารวมหมดจะนับซ้ำ
+  const picked = () => shots.filter((s) => s.on);
+  const shotsTotal = () => picked().reduce((sum, s) => sum + s.counted, 0);
+
+  /** ขยายรูปดูเต็ม ๆ — ถ่ายจากมือถือแล้วดูบนธัมบ์เล็ก ๆ มักดูไม่ออกว่านับถูกไหม */
+  function zoomShot(s, i) {
+    modal(`รูปที่ ${i + 1} — ${shotsFor}`,
+      h('div', {},
+        h('img', { src: s.thumb, style: 'width:100%;border-radius:8px;border:1px solid var(--line)' }),
+        h('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap' },
+          h('div', { style: 'font-size:30px;font-weight:800;color:var(--brand)' }, fmtNum(s.counted)),
+          h('span', { class: 'muted' }, s.unit || ''),
+          pill(...(CONF[s.confidence] ?? ['-', 'gray']))),
+        h('p', { style: 'font-size:14px;margin-top:8px' }, h('strong', {}, 'วิธีนับ: '), s.basis)),
+      [h('button', { class: 'btn primary', onclick: (e) => e.target.closest('.modal-bg').remove() }, 'ปิด')]);
+  }
 
   function renderShots() {
     if (!shots.length) { shotsBox.replaceChildren(); return; }
     const total = shotsTotal();
+    const nOn = picked().length;
+
+    const card = (s, i) => h('div', { class: `shot ${s.on ? 'on' : ''}` },
+      // ติ๊กเลือก/ไม่เลือกได้ทั้งใบ ยกเว้นตรงปุ่มลบกับรูป (รูปกดเพื่อขยาย)
+      h('label', { class: 'shot-pick', title: s.on ? 'เอาออกจากยอดรวม' : 'นับรูปนี้เข้ายอดรวม' },
+        h('input', {
+          type: 'checkbox', checked: s.on,
+          onchange: (e) => { s.on = e.target.checked; renderShots(); },
+        })),
+      h('button', {
+        class: 'shot-del', title: `ลบรูปที่ ${i + 1} ทิ้ง`,
+        onclick: () => { shots.splice(i, 1); if (!shots.length) shotsFor = null; renderShots(); syncPhotoBtn(); },
+      }, '✕'),
+      h('img', { src: s.thumb, alt: `รูปที่ ${i + 1}`, title: 'คลิกเพื่อขยายดูเต็มรูป', onclick: () => zoomShot(s, i) }),
+      h('div', { class: 'shot-info' },
+        h('div', { class: 'shot-qty' }, fmtNum(s.counted), h('small', {}, s.unit || '')),
+        pill(...(CONF[s.confidence] ?? ['-', 'gray']))));
+
     shotsBox.replaceChildren(h('div', { class: 'shots' },
       h('div', { class: 'shots-head' },
-        h('b', {}, `📷 รูปที่ถ่ายไว้ ${shots.length} รูป — ${shotsFor}`),
+        h('b', {}, `📷 ${shotsFor} — ถ่ายไว้ ${shots.length} รูป`),
+        h('span', { class: 'muted', style: 'font-size:12px' }, `เลือกนับ ${nOn} รูป`),
         h('button', {
           class: 'btn ghost', style: 'font-size:12px;padding:3px 9px;margin-left:auto',
-          title: 'ล้างรูปทั้งหมดของตำแหน่งนี้ แล้วเริ่มนับใหม่',
-          onclick: () => { shots = []; shotsFor = null; renderShots(); },
-        }, '🗑️ ล้างทั้งหมด')),
-      ...shots.map((s, i) => h('div', { class: 'shot-row' },
-        h('img', { src: s.thumb, alt: `รูปที่ ${i + 1}` }),
-        h('div', { style: 'min-width:0' },
-          h('div', {}, h('b', {}, `รูปที่ ${i + 1}: ${fmtNum(s.counted)}`), ' ', pill(...(CONF[s.confidence] ?? ['-', 'gray']))),
-          h('div', { class: 'muted', style: 'font-size:11.5px' }, s.basis)),
+          title: shots.every((s) => s.on) ? 'เอาออกจากยอดรวมทั้งหมด' : 'เลือกนับทุกรูป',
+          onclick: () => { const all = shots.every((s) => s.on); shots.forEach((s) => { s.on = !all; }); renderShots(); },
+        }, shots.every((s) => s.on) ? '☐ ไม่เลือกเลย' : '☑ เลือกทุกรูป'),
         h('button', {
-          class: 'btn ghost', style: 'font-size:12px;padding:3px 8px;margin-left:auto',
-          title: `เอารูปที่ ${i + 1} ออกจากยอดรวม`,
-          onclick: () => { shots.splice(i, 1); if (!shots.length) shotsFor = null; renderShots(); },
-        }, '✕'))),
+          class: 'btn ghost', style: 'font-size:12px;padding:3px 9px',
+          title: 'ล้างรูปทั้งหมดของตำแหน่งนี้ แล้วเริ่มนับใหม่',
+          onclick: () => { shots = []; shotsFor = null; renderShots(); syncPhotoBtn(); },
+        }, '🗑️ ล้างทั้งหมด')),
+      h('div', { class: 'shot-grid' }, ...shots.map(card)),
       h('div', { class: 'shots-sum' },
-        h('span', {}, 'รวมทุกรูป'),
+        h('span', {}, nOn === shots.length ? 'รวมทุกรูป' : `รวม ${nOn} รูปที่เลือก`),
         h('b', {}, fmtNum(total)),
+        h('small', { class: 'muted' }, picked()[0]?.unit || ''),
         h('button', {
           class: 'btn primary', style: 'font-size:12.5px;padding:5px 12px;margin-left:auto',
-          title: 'นำยอดรวมจากทุกรูปไปใส่ในช่อง "นับได้" เพื่อตรวจก่อนบันทึก',
+          title: 'นำยอดรวมของรูปที่เลือกไว้ไปใส่ในช่อง "นับได้" เพื่อตรวจก่อนบันทึก',
           onclick: () => {
+            if (!nOn) { toast('ยังไม่ได้เลือกรูปไหนเลย', 'err'); return; }
             qtyInput.value = String(total);
-            noteInput.value = `นับจาก ${shots.length} รูป (${shots.map((s) => fmtNum(s.counted)).join('+')})`.slice(0, 200);
+            noteInput.value = `นับจาก ${nOn} รูป (${picked().map((s) => fmtNum(s.counted)).join('+')})`.slice(0, 200);
             qtyInput.focus(); qtyInput.select();
             toast(`ใส่ยอดรวม ${fmtNum(total)} ให้แล้ว — ตรวจแล้วกดบันทึก`);
           },
@@ -238,9 +270,15 @@ async function roundDetail(roundId) {
     const prog = aiProgress('', {
       steps: [`กำลังส่งรูปให้ AI ดู — ${code}`, 'AI กำลังไล่นับของในรูป…', 'กำลังเทียบกับยอดในระบบ…', 'ใกล้เสร็จแล้ว…'],
     });
+    // เอฟเฟกต์สแกน — รังสีเขียวกวาดบนรูป + เส้นตารางจับขอบ ให้เห็นว่ากำลังอ่านรูปอยู่จริง
     const waitModal = modal(`📷 นับจากรูป — ${code}`,
       h('div', {},
-        h('img', { src: files[0], style: 'width:100%;max-height:220px;object-fit:contain;border:1px solid var(--line);border-radius:8px' }),
+        h('div', { class: 'scan-stage' },
+          h('img', { src: files[0] }),
+          h('div', { class: 'scan-grid' }),
+          h('div', { class: 'scan-beam' }),
+          h('div', { class: 'scan-corners' },
+            h('i'), h('i'), h('i'), h('i'))),
         prog.el),
       []);
     photoBtn.disabled = true;
@@ -257,6 +295,7 @@ async function roundDetail(roundId) {
         h('div', {},
           h('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px' },
             h('div', { style: 'font-size:34px;font-weight:800;color:var(--brand)' }, fmtNum(r.counted)),
+            line?.unit ? h('span', { class: 'muted', style: 'font-size:15px;align-self:flex-end;padding-bottom:6px' }, line.unit) : null,
             h('div', {}, pill(...conf),
               r.expected !== null ? h('div', { class: 'muted', style: 'font-size:13px;margin-top:3px' },
                 `ระบบบันทึกไว้ ${fmtNum(r.expected)} · ต่าง ${r.variance > 0 ? '+' : ''}${fmtNum(r.variance)}`) : null)),
@@ -278,7 +317,10 @@ async function roundDetail(roundId) {
             title: 'เก็บรูปนี้เข้ารายการเพื่อรวมกับรูปอื่นของตำแหน่งเดียวกัน — ถ่ายต่อได้เรื่อย ๆ แล้วค่อยใช้ยอดรวม',
             onclick: () => {
               if (shotsFor !== code) { shots = []; shotsFor = code; }
-              shots.push({ counted: r.counted, confidence: r.confidence, basis: r.counting_basis, thumb: files[0] });
+              shots.push({
+                counted: r.counted, confidence: r.confidence, basis: r.counting_basis,
+                thumb: files[0], unit: line?.unit ?? '', on: true,
+              });
               renderShots();
               syncPhotoBtn();
               m.close();

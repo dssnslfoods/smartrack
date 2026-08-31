@@ -224,20 +224,74 @@ tbody tr:hover { background: #f8fafc; }
 /* ปุ่มที่ยังกดไม่ได้เพราะรอข้อมูลอย่างอื่นก่อน — จางลงแต่ยังกดได้ เพื่อให้ขึ้นคำอธิบายว่าต้องทำอะไรก่อน */
 .btn.is-waiting { opacity: .5; }
 
-/* ---------- รายการรูปที่ถ่ายไว้ของตำแหน่งเดียวกัน (นับหลายรูปแล้วรวมยอด) ---------- */
-.shots { border: 1px solid #cdeae6; background: #f7fdfc; border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
-.shots-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #0f766e; margin-bottom: 8px; }
-.shot-row {
-  display: flex; align-items: center; gap: 10px; padding: 6px 0;
-  border-top: 1px solid #ddeeeb; font-size: 13px;
+/* ---------- ตารางรูปที่ถ่ายไว้ของตำแหน่งเดียวกัน (เลือกรูปแล้วรวมยอด) ---------- */
+.shots { border: 1px solid #cdeae6; background: #f7fdfc; border-radius: 10px; padding: 12px; margin-top: 12px; }
+.shots-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #0f766e; margin-bottom: 10px; flex-wrap: wrap; }
+
+/* ธัมบ์เนลขนาดเท่ากันทุกใบ ไม่ว่ารูปต้นฉบับจะสัดส่วนไหน */
+.shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(122px, 1fr)); gap: 10px; }
+.shot {
+  position: relative; border: 2px solid #dbe7e5; border-radius: 10px; overflow: hidden;
+  background: #fff; transition: border-color .15s, box-shadow .15s; opacity: .55;
 }
-.shot-row img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex: 0 0 auto; }
-.shot-row .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot.on { border-color: var(--brand); opacity: 1; box-shadow: 0 2px 8px rgba(15,118,110,.18); }
+.shot img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: zoom-in; }
+.shot-info {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border-top: 1px solid #eef4f3; background: #fff;
+}
+.shot-qty { font-size: 17px; font-weight: 800; color: var(--brand); font-variant-numeric: tabular-nums; line-height: 1; }
+.shot-qty small { font-size: 11px; font-weight: 600; color: var(--muted); margin-left: 3px; }
+
+.shot-pick { position: absolute; top: 6px; left: 6px; z-index: 2; cursor: pointer; }
+.shot-pick input { width: 19px; height: 19px; accent-color: var(--brand); cursor: pointer; display: block; }
+.shot-del {
+  position: absolute; top: 6px; right: 6px; z-index: 2; width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 50%; background: rgba(15,23,42,.6); color: #fff;
+  font-size: 12px; line-height: 1; cursor: pointer;
+}
+.shot-del:hover { background: #b91c1c; }
+
 .shots-sum {
-  display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-top: 9px;
-  border-top: 2px solid #b9e4de; font-size: 14px; color: #0f766e;
+  display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px;
+  border-top: 2px solid #b9e4de; font-size: 14px; color: #0f766e; flex-wrap: wrap;
 }
-.shots-sum b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.shots-sum b { font-size: 22px; font-variant-numeric: tabular-nums; }
+
+/* ---------- เอฟเฟกต์สแกน — รังสีเขียวกวาดบนรูประหว่าง AI อ่าน ---------- */
+.scan-stage {
+  position: relative; overflow: hidden; border-radius: 8px; background: #0b1220;
+  border: 1px solid #134e4a; line-height: 0;
+}
+.scan-stage img { width: 100%; max-height: 240px; object-fit: contain; display: block; }
+/* เส้นตารางจาง ๆ ให้ดูเหมือนเครื่องกำลังจับขอบวัตถุ */
+.scan-grid {
+  position: absolute; inset: 0; pointer-events: none; opacity: .35;
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 22px, rgba(34,197,94,.55) 22px 23px),
+    repeating-linear-gradient(90deg, transparent 0 22px, rgba(34,197,94,.55) 22px 23px);
+}
+/* รังสีกวาดขึ้น-ลง */
+.scan-beam {
+  position: absolute; left: 0; right: 0; height: 38%; pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(34,197,94,.28) 45%, rgba(134,239,172,.85) 50%, rgba(34,197,94,.28) 55%, transparent);
+  box-shadow: 0 0 22px 5px rgba(34,197,94,.35);
+  animation: scan-sweep 2s ease-in-out infinite;
+}
+@keyframes scan-sweep {
+  0% { top: -38%; }
+  100% { top: 100%; }
+}
+/* มุมกรอบเล็ง */
+.scan-corners i { position: absolute; width: 20px; height: 20px; border: 2.5px solid #4ade80; }
+.scan-corners i:nth-child(1) { top: 8px; left: 8px; border-right: 0; border-bottom: 0; }
+.scan-corners i:nth-child(2) { top: 8px; right: 8px; border-left: 0; border-bottom: 0; }
+.scan-corners i:nth-child(3) { bottom: 8px; left: 8px; border-right: 0; border-top: 0; }
+.scan-corners i:nth-child(4) { bottom: 8px; right: 8px; border-left: 0; border-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-beam { animation: none; top: 31%; }
+}
 
 /* ---------- กล่องสถานะระหว่างรอ AI — ต้องมีอะไรขยับตลอด ไม่งั้นดูเหมือนระบบค้าง ---------- */
 .ai-progress {
