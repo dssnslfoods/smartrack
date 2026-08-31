@@ -1,7 +1,7 @@
 // ผู้ช่วย AI + หน้าวิเคราะห์เชิงลึก
 // ตัวเลขทั้งหมดมาจาก /api/insights/* (คำนวณล้วน) ส่วนคำแนะนำมาจาก /api/ai/* (ต้องเปิด AI)
 import { api, auth, wh } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill } from '../ui.js?v=36';
+import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill } from '../ui.js?v=38';
 
 const RISK = {
   EXPIRED: { label: 'หมดอายุแล้ว', color: 'red' },
@@ -28,6 +28,49 @@ const kpi = (label, value, sub, tone) =>
     h('div', { class: 'value' }, value),
     sub ? h('div', { class: 'sub' }, sub) : null);
 
+// ══════════════════════════════════════════════════════════════
+//  น้องสต๊อค — มาสคอตประจำคลัง (กล่องพัสดุที่มีใบไม้งอก โยงกับแบรนด์ de leaf)
+// ══════════════════════════════════════════════════════════════
+const NONG = 'น้องสต๊อค';
+
+/** ท่าทางของน้องสต๊อค: happy = ปกติ · think = กำลังค้นข้อมูล · oops = มีปัญหา */
+const MASCOT_SVG = (mood = 'happy') => {
+  const eyes = mood === 'think'
+    // กำลังคิด — เหลือบมองขึ้น
+    ? `<ellipse cx="24" cy="38" rx="3.4" ry="4" fill="#3f2a14"/>
+       <ellipse cx="40" cy="38" rx="3.4" ry="4" fill="#3f2a14"/>
+       <circle cx="25.4" cy="36.2" r="1.3" fill="#fff"/>
+       <circle cx="41.4" cy="36.2" r="1.3" fill="#fff"/>`
+    : mood === 'oops'
+      // เอ๊ะ — ตาโตกังวล
+      ? `<ellipse cx="24" cy="39" rx="3.8" ry="4.4" fill="#3f2a14"/>
+         <ellipse cx="40" cy="39" rx="3.8" ry="4.4" fill="#3f2a14"/>
+         <circle cx="25.3" cy="37.4" r="1.4" fill="#fff"/>
+         <circle cx="41.3" cy="37.4" r="1.4" fill="#fff"/>`
+      : `<ellipse cx="24" cy="39" rx="3.4" ry="4" fill="#3f2a14"/>
+         <ellipse cx="40" cy="39" rx="3.4" ry="4" fill="#3f2a14"/>
+         <circle cx="25.2" cy="37.5" r="1.2" fill="#fff"/>
+         <circle cx="41.2" cy="37.5" r="1.2" fill="#fff"/>`;
+  const mouth = mood === 'oops'
+    ? `<ellipse cx="32" cy="47" rx="3" ry="2.6" fill="#3f2a14"/>`
+    : `<path d="M27.5 46.2c1.8 2.4 7.2 2.4 9 0" stroke="#3f2a14" stroke-width="2" stroke-linecap="round" fill="none"/>`;
+  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${NONG}">
+    <path d="M32 21V11" stroke="#15803d" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M32 13.5c0-4.2 3.6-7 7.5-7 0 4.2-3.3 7-7.5 7z" fill="#22c55e"/>
+    <path d="M32 16.5c0-3.6-3.2-5.8-6.4-5.8 0 3.6 2.8 5.8 6.4 5.8z" fill="#4ade80"/>
+    <path d="M7 20.5h50l-3.5 7.5h-43z" fill="#c98f52"/>
+    <rect x="10.5" y="27" width="43" height="31" rx="4.5" fill="#e8b887"/>
+    <rect x="28.5" y="20.5" width="7" height="8" rx="1.2" fill="#f7e3c2"/>
+    <ellipse cx="18.5" cy="45" rx="4" ry="2.6" fill="#f4948f" opacity=".6"/>
+    <ellipse cx="45.5" cy="45" rx="4" ry="2.6" fill="#f4948f" opacity=".6"/>
+    ${eyes}${mouth}
+  </svg>`;
+};
+
+/** รูปน้องสต๊อค — ใส่ class 'bob' เพื่อให้ขยับเบา ๆ */
+const mascot = (size = 40, mood = 'happy', cls = '') =>
+  h('div', { class: `nong-face ${cls}`, style: `width:${size}px;height:${size}px`, html: MASCOT_SVG(mood) });
+
 /** ข้อความจาก AI — รองรับ **ตัวหนา** และขึ้นบรรทัดใหม่ */
 function richText(s) {
   const box = h('div', {});
@@ -42,7 +85,7 @@ function richText(s) {
 }
 
 /** กล่องคำแนะนำจาก AI (ใช้ร่วมกันทุกหน้า) */
-function briefCard(brief, { title = '🧠 สรุปจาก AI' } = {}) {
+function briefCard(brief, { title = `📦 ${NONG} สรุปให้` } = {}) {
   if (!brief) return null;
   return h('div', { class: 'card', style: 'border-left:4px solid var(--brand)' },
     h('h2', {}, title),
@@ -66,13 +109,13 @@ function briefCard(brief, { title = '🧠 สรุปจาก AI' } = {}) {
 function explainButton(topic, mount, enabled) {
   if (!enabled) return null;
   const btn = h('button', { class: 'btn', onclick: async () => {
-    btn.disabled = true; btn.textContent = '🧠 กำลังวิเคราะห์…';
+    btn.disabled = true; btn.textContent = '📦 น้องสต๊อคกำลังคิด…';
     try {
       const r = await api.get('/api/ai/explain', { topic, warehouse_id: wh.id });
-      mount.replaceChildren(briefCard(r.brief, { title: '🧠 คำแนะนำจาก AI' }) ?? h('div'));
+      mount.replaceChildren(briefCard(r.brief, { title: `📦 ${NONG} แนะนำว่า` }) ?? h('div'));
     } catch (err) { toast(err.message, 'err'); }
-    btn.disabled = false; btn.textContent = '🧠 ให้ AI อธิบาย';
-  } }, '🧠 ให้ AI อธิบาย');
+    btn.disabled = false; btn.textContent = '📦 ให้น้องสต๊อคอธิบาย';
+  } }, '📦 ให้น้องสต๊อคอธิบาย');
   return btn;
 }
 
@@ -102,23 +145,31 @@ export async function copilotView() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
 
-  function bubble(role, content) {
+  function bubble(role, content, mood = 'happy') {
     const mine = role === 'user';
-    return h('div', { style: `display:flex;${mine ? 'justify-content:flex-end' : ''}` },
-      h('div', {
-        class: 'card',
-        style: `max-width:min(760px,88%);padding:12px 16px;margin:0;${mine
-          ? 'background:var(--brand);color:#fff;border-color:var(--brand)'
-          : 'border-left:3px solid var(--brand)'}`,
-      }, typeof content === 'string' ? richText(content) : content));
+    if (mine) {
+      return h('div', { class: 'chat-row mine' },
+        h('div', { class: 'chat-bubble mine' }, typeof content === 'string' ? richText(content) : content));
+    }
+    // ฝั่งน้องสต๊อค — มีหน้าตัวเองกำกับทุกข้อความ จะได้รู้ว่าใครพูด
+    return h('div', { class: 'chat-row' },
+      mascot(34, mood, 'sm'),
+      h('div', { style: 'min-width:0' },
+        h('div', { class: 'chat-name' }, NONG),
+        h('div', { class: 'chat-bubble' }, typeof content === 'string' ? richText(content) : content)));
   }
 
   function renderLog() {
     log.replaceChildren(...(history.length
-      ? history.map((m) => bubble(m.role, m.content))
-      : [h('div', { class: 'empty-state' },
-          h('p', {}, '💬 ถามอะไรก็ได้เกี่ยวกับคลังสินค้า'),
-          h('p', { style: 'font-size:13px' }, 'ผู้ช่วยจะดึงข้อมูลจริงจากระบบมาตอบ — อ่านข้อมูลอย่างเดียว ไม่แก้ไขอะไร'))]));
+      ? history.map((m) => bubble(m.role, m.content, m.mood))
+      : [h('div', { class: 'nong-hello' },
+          mascot(76, 'happy', 'bob'),
+          h('div', {},
+            h('div', { class: 'nong-hi' }, `สวัสดีครับ ผม${NONG} 📦`),
+            h('p', {},
+              'ถามเรื่องคลังได้ทุกอย่างเลยครับ — ของเหลือเท่าไร อยู่ชั้นไหน Lot ไหนใกล้หมดอายุ'),
+            h('p', { class: 'muted', style: 'font-size:12.5px;margin:6px 0 0' },
+              '🔒 ผมดึงตัวเลขจริงจากระบบมาตอบ และดูข้อมูลได้อย่างเดียว — แก้ไขอะไรไม่ได้ครับ')))]));
     log.scrollTop = log.scrollHeight;
   }
 
@@ -129,7 +180,8 @@ export async function copilotView() {
     history.push({ role: 'user', content: text });
     renderLog();
 
-    const thinking = bubble('assistant', h('span', { class: 'muted' }, '🧠 กำลังค้นข้อมูล…'));
+    const thinking = bubble('assistant',
+      h('span', { class: 'muted nong-typing' }, 'ขอค้นข้อมูลแป๊บนะครับ', h('i'), h('i'), h('i')), 'think');
     log.append(thinking);
     log.scrollTop = log.scrollHeight;
     sendBtn.disabled = true; input.disabled = true;
@@ -148,7 +200,7 @@ export async function copilotView() {
       }
     } catch (err) {
       thinking.remove();
-      history.push({ role: 'assistant', content: `⚠️ ${err.message}` });
+      history.push({ role: 'assistant', content: `ขออภัยครับ ผมดึงข้อมูลไม่สำเร็จ 😢\n${err.message}`, mood: 'oops' });
       renderLog();
     }
     sendBtn.disabled = false; input.disabled = false;
@@ -159,19 +211,21 @@ export async function copilotView() {
   renderLog();
 
   return h('div', {},
-    h('div', { class: 'page-head' },
-      h('div', {}, h('h1', {}, 'ผู้ช่วย AI'),
-        h('p', {}, `คลัง: ${wh.label} — ถามเป็นภาษาไทยได้เลย ผู้ช่วยจะดึงข้อมูลจริงจากระบบมาตอบ`))),
+    h('div', { class: 'page-head nong-head' },
+      mascot(52, 'happy', 'bob'),
+      h('div', {}, h('h1', {}, NONG),
+        h('p', {}, `ผู้ช่วยประจำคลัง ${wh.label} — ถามเป็นภาษาไทยได้เลยครับ ผมดึงข้อมูลจริงจากระบบมาตอบ`))),
 
     enabled ? null : h('div', { class: 'note bad' },
-      '⚠️ ยังไม่ได้เปิดใช้งาน AI — ผู้ดูแลระบบต้องตั้งค่า ANTHROPIC_API_KEY ที่เซิร์ฟเวอร์ก่อน'),
+      `⚠️ ${NONG} ยังไม่พร้อมทำงาน — ผู้ดูแลระบบต้องใส่ API Key ที่หน้า ตั้งค่า → ตั้งค่า AI ก่อนครับ`),
 
     h('div', { class: 'card' }, log),
 
     h('div', { class: 'card' },
       h('div', { style: 'display:flex;gap:8px;align-items:flex-end' },
         h('div', { style: 'flex:1' }, input), sendBtn),
-      h('div', { class: 'row', style: 'flex-wrap:wrap;gap:6px;margin-top:10px' },
+      h('div', { class: 'muted', style: 'font-size:12px;margin-top:10px;margin-bottom:4px' }, '💡 ลองถามแบบนี้ดูครับ'),
+      h('div', { class: 'row', style: 'flex-wrap:wrap;gap:6px' },
         ...SUGGESTIONS.map((s) =>
           h('button', { class: 'chip', style: 'font-family:inherit;font-weight:500',
             onclick: () => send(s) }, s)))));
@@ -220,8 +274,8 @@ export async function insightsView() {
           `รุนแรง ${fmtNum(s.anomalies.summary.high)} รายการ`, s.anomalies.summary.high ? 'bad' : 'ok'),
         kpi('เที่ยวเดินที่ลดได้', fmtNum(s.slotting.potential_trips_saved_per_month), 'เที่ยว/เดือน', 'ok')),
       r.ai_disabled
-        ? h('div', { class: 'note bad' }, '⚠️ ยังไม่ได้เปิดใช้งาน AI — แสดงเฉพาะตัวเลขวิเคราะห์ ยังไม่มีคำแนะนำสรุป')
-        : briefCard(r.brief, { title: '🧠 สิ่งที่ควรทำวันนี้' }),
+        ? h('div', { class: 'note bad' }, `⚠️ ${NONG} ยังไม่พร้อม — ตัวเลขวิเคราะห์ยังดูได้ปกติ แต่ยังไม่มีคำแนะนำสรุปครับ`)
+        : briefCard(r.brief, { title: `📦 ${NONG} บอกว่าวันนี้ควรทำ` }),
       s.expiry.top.length ? h('div', { class: 'card' },
         h('h2', {}, 'Lot ที่ต้องรีบจัดการ'),
         table([
@@ -408,11 +462,12 @@ export async function insightsView() {
 
   paint();
   return h('div', {},
-    h('div', { class: 'page-head' },
-      h('div', {}, h('h1', {}, 'AI Insights'),
-        h('p', {}, `คลัง: ${wh.label} — วิเคราะห์เชิงลึกจากข้อมูลจริง พร้อมคำแนะนำว่าควรทำอะไรต่อ`))),
+    h('div', { class: 'page-head nong-head' },
+      mascot(46, 'think'),
+      h('div', {}, h('h1', {}, 'วิเคราะห์เชิงลึก'),
+        h('p', {}, `คลัง: ${wh.label} — ตัวเลขคำนวณจากข้อมูลจริง พร้อมคำแนะนำจาก${NONG}ว่าควรทำอะไรต่อ`))),
     enabled ? null : h('div', { class: 'note bad' },
-      '⚠️ ยังไม่ได้เปิดใช้งาน AI — ตัวเลขวิเคราะห์ยังใช้ได้ปกติ แต่จะไม่มีคำแนะนำสรุปจาก AI'),
+      `⚠️ ${NONG} ยังไม่พร้อม — ตัวเลขวิเคราะห์ยังใช้ได้ปกติ แต่จะไม่มีคำแนะนำสรุปครับ`),
     h('div', { class: 'card', style: 'padding:12px' }, tabsBox),
     body);
 }

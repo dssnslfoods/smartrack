@@ -1,6 +1,6 @@
 // ผังคลังสินค้า — เลือกคลัง แล้วจัดวาง RACK บนผังพื้น (เฉพาะ ADMIN แก้ไขได้)
 import { api, auth } from '../api.js';
-import { h, field, modal, toast, pill, fmtNum, confirmBox } from '../ui.js?v=36';
+import { h, field, modal, toast, pill, fmtNum, confirmBox } from '../ui.js?v=38';
 
 const ZONE_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');

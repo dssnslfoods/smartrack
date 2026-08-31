@@ -1,6 +1,6 @@
 // เอกสารคลัง — โอนย้าย / รับคืนลูกค้า / ส่งคืนผู้ขาย / ตัดเสีย + ประวัติเอกสารทั้งหมด
 import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, DOC_COLOR, locationPickerModal } from '../ui.js?v=36';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, DOC_COLOR, locationPickerModal } from '../ui.js?v=38';
 
 // ---------- ตัวช่วย: สแกน/พิมพ์รหัสตำแหน่งเพื่อดึงรายการสินค้าในตำแหน่งนั้น ----------
 function itemPicker(onAdd) {

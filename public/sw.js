@@ -1,20 +1,29 @@
 // Service Worker — Offline Mode: ค้นหาสินค้า/ดูแผนผังได้แม้เน็ตขัดข้อง
-const SHELL = 'rack-shell-v36';
-const DATA = 'rack-data-v36';
+// เลขเวอร์ชันมีที่เดียวตรงนี้ — ต้องตรงกับ ?v= ใน index.html และ import ของ app.js
+const VERSION = 38;
+const SHELL = `rack-shell-v${VERSION}`;
+const DATA = `rack-data-v${VERSION}`;
+// ไฟล์ที่มีเวอร์ชันต่อท้ายต้องแคชด้วย URL ที่มี ?v= ให้ตรงกับที่หน้าเว็บเรียกจริง
+// ไม่งั้นจะแคชไว้เฉย ๆ แต่ไม่มีใครใช้ แล้วยังได้ไฟล์เก่าจาก HTTP cache มาแทน
+const V = (p) => `${p}?v=${VERSION}`;
 const SHELL_FILES = [
-  '/', '/index.html', '/css/app.css',
-  '/js/app.js', '/js/api.js', '/js/ui.js', '/js/actions.js',
-  '/js/views/login.js', '/js/views/dashboard.js', '/js/views/search.js',
-  '/js/views/pick.js', '/js/views/map.js', '/js/views/history.js', '/js/views/reports.js',
-  '/js/views/layout.js', '/js/views/settings.js',
-  '/js/views/inbound.js', '/js/views/outbound.js', '/js/views/docs.js',
-  '/js/views/expiry.js', '/js/views/count.js', '/js/views/ai.js',
+  '/', '/index.html', V('/css/app.css'),
+  V('/js/app.js'), '/js/api.js', V('/js/ui.js'), '/js/actions.js',
+  '/js/views/login.js', '/js/views/dashboard.js', V('/js/views/search.js'),
+  V('/js/views/pick.js'), V('/js/views/map.js'), '/js/views/history.js', '/js/views/reports.js',
+  '/js/views/layout.js', V('/js/views/settings.js'),
+  V('/js/views/inbound.js'), V('/js/views/outbound.js'), V('/js/views/docs.js'),
+  V('/js/views/expiry.js'), V('/js/views/count.js'), V('/js/views/ai.js'),
   '/manifest.webmanifest',
   '/img/deleaf-logo.png', '/img/deleaf-icon.png',
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
+  // reload = ข้าม HTTP cache ของเบราว์เซอร์ ไม่งั้นอาจแคชไฟล์เก่าค้างไว้ทั้งรอบ
+  e.waitUntil(caches.open(SHELL)
+    .then((c) => Promise.all(SHELL_FILES.map((f) =>
+      fetch(f, { cache: 'reload' }).then((r) => (r.ok ? c.put(f, r) : null)).catch(() => null))))
+    .then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(

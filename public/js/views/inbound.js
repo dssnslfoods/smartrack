@@ -1,6 +1,6 @@
 // รับสินค้าเข้าคลัง (GRN) — หลายรายการ/หลาย Lot ต่อใบ + QC + อ้างอิงเลข PO
 import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles } from '../ui.js?v=36';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles } from '../ui.js?v=38';
 
 export async function inboundView() {
   const [skus, zones, aiStatus] = await Promise.all([
