@@ -224,12 +224,12 @@ export async function warehouseLayoutView({ match }) {
 
     const m = modal(r ? `แก้ไขชั้นวาง ${r.rag_no}` : 'เพิ่มชั้นวางใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('หมายเลข RACK', no), field('โซน', zoneSel)),
+        h('div', { class: 'grid g2' }, field('หมายเลข RACK', no, null, 'รหัสชั้นวาง เช่น A01, B02 — ใช้ร่วมกับโซนเป็นรหัสตำแหน่ง'), field('โซน', zoneSel, null, 'โซนจัดเก็บที่ชั้นวางนี้อยู่ เช่น FG (สินค้าสำเร็จรูป), RM (วัตถุดิบ)')),
         h('div', { class: 'grid g2' },
-          field('จำนวนชั้น (Level)', lvl, 'ความสูงของชั้นวาง'),
-          field('จำนวนตอน', dep, 'ใส่เลขคู่ — ทุก 2 ตอน = 1 ล็อค (1 พาเลต)')),
-        field('หมายเหตุ', nt),
-        status ? field('สถานะ', status) : null,
+          field('จำนวนชั้น (Level)', lvl, 'ความสูงของชั้นวาง', 'จำนวนชั้นจากล่างขึ้นบน — L1 คือชั้นล่างสุด หยิบง่ายที่สุด'),
+          field('จำนวนตอน', dep, 'ใส่เลขคู่ — ทุก 2 ตอน = 1 ล็อค (1 พาเลต)', 'ความลึกของ Drive-in Rack — D1 คือหน้าสุด เข้าถึงได้โดยตรง')),
+        field('หมายเหตุ', nt, null, 'บันทึกเพิ่มเติมเกี่ยวกับชั้นวาง เช่น ตำแหน่งพิเศษ'),
+        status ? field('สถานะ', status, null, 'ปิดใช้งานจะไม่แสดงชั้นวางนี้ในการแนะนำตำแหน่ง') : null,
         at ? h('div', { class: 'hint' }, `จะวางที่ช่อง คอลัมน์ ${at.x + 1} · แถว ${at.y + 1}`) : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
@@ -270,9 +270,9 @@ export async function warehouseLayoutView({ match }) {
 
     const m = modal(z ? `แก้ไขโซน ${z.zone_code}` : 'เพิ่มโซนใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('รหัสโซน', code, 'ต้องไม่ซ้ำกับโซนอื่นทุกคลัง'), field('ชื่อโซน', name)),
-        field('สีบนผัง', swatches),
-        status ? field('สถานะ', status) : null),
+        h('div', { class: 'grid g2' }, field('รหัสโซน', code, 'ต้องไม่ซ้ำกับโซนอื่นทุกคลัง', 'รหัสย่อของโซน เช่น FG, RM, PK, QR — ใช้เป็นส่วนหนึ่งของรหัสตำแหน่ง'), field('ชื่อโซน', name, null, 'ชื่อเต็มของโซน เช่น สินค้าสำเร็จรูป, วัตถุดิบ')),
+        field('สีบนผัง', swatches, null, 'สีที่ใช้แสดงโซนนี้บนผังพื้นคลัง — เลือกให้ต่างจากโซนอื่น'),
+        status ? field('สถานะ', status, null, 'ปิดใช้งานจะซ่อนโซนนี้จากการแนะนำตำแหน่ง') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         z && !z.rack_count ? h('button', {
@@ -356,12 +356,12 @@ function warehouseForm(w, onDone) {
 
   const m = modal(w ? `ตั้งค่าคลัง ${w.wh_code}` : 'เพิ่มคลังสินค้าใหม่',
     h('div', {},
-      h('div', { class: 'grid g2' }, field('รหัสคลัง', code), field('ชื่อคลัง', name)),
-      field('ที่อยู่', addr),
+      h('div', { class: 'grid g2' }, field('รหัสคลัง', code, null, 'รหัสย่อของคลัง เช่น WH1, WH2 — ใช้อ้างอิงในระบบ'), field('ชื่อคลัง', name, null, 'ชื่อเต็มของคลัง เช่น คลังสินค้าหลัก')),
+      field('ที่อยู่', addr, null, 'ที่อยู่หรือที่ตั้งของคลังสินค้า — ไม่บังคับ'),
       h('div', { class: 'grid g2' },
-        field('ความกว้างผัง (คอลัมน์)', cols, 'จำนวนช่องแนวนอน'),
-        field('ความลึกผัง (แถว)', rows, 'จำนวนช่องแนวตั้ง')),
-      status ? field('สถานะ', status) : null),
+        field('ความกว้างผัง (คอลัมน์)', cols, 'จำนวนช่องแนวนอน', 'จำนวนช่องแนวนอนของผังพื้น — กำหนดความกว้างที่วางชั้นวางได้'),
+        field('ความลึกผัง (แถว)', rows, 'จำนวนช่องแนวตั้ง', 'จำนวนช่องแนวตั้งของผังพื้น — กำหนดความลึกที่วางชั้นวางได้')),
+      status ? field('สถานะ', status, null, 'ปิดใช้งานจะซ่อนคลังนี้จากรายการเลือก') : null),
     [
       h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
       w ? h('button', {

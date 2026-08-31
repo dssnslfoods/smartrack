@@ -59,7 +59,7 @@ export async function outboundView() {
         h('p', { class: 'muted' },
           `${doc.party ?? '-'} ${doc.channel_code ? `· ช่องทาง ${doc.channel_code}` : ''} ${doc.ref_no ? `· SO ${doc.ref_no}` : ''}`),
         timeline,
-        auth.can('move') ? h('div', { class: 'row' }, field('Tracking No.', tracking), field('ขนส่ง', carrier)) : null,
+        auth.can('move') ? h('div', { class: 'row' }, field('Tracking No.', tracking, null, 'เลขพัสดุสำหรับติดตามสถานะการจัดส่ง เช่น Kerry, Flash, ไปรษณีย์'), field('ขนส่ง', carrier, null, 'ชื่อบริษัทขนส่งที่ใช้จัดส่งสินค้า เช่น Kerry Express, Flash, J&T')) : null,
         h('h2', { style: 'margin-top:10px' }, 'รายการสินค้า'),
         table([
           { label: 'สินค้า', key: 'sku_name' },

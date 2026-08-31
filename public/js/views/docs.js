@@ -95,9 +95,9 @@ export async function docsView() {
     }
     const m = modal('สร้างใบโอนย้าย',
       h('div', {},
-        field('เพิ่มรายการจากตำแหน่ง', picker.el),
+        field('เพิ่มรายการจากตำแหน่ง', picker.el, null, 'สแกนหรือพิมพ์รหัสตำแหน่งต้นทางที่จะย้ายสินค้าออก'),
         listEl,
-        field('หมายเหตุ', note)),
+        field('หมายเหตุ', note, null, 'รายละเอียดเพิ่มเติมเกี่ยวกับการโอนย้ายครั้งนี้')),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -135,17 +135,17 @@ export async function docsView() {
       const line = { sel, qty, lot, exp, loc };
       lines.push(line);
       linesBox.append(h('div', { class: 'row', style: 'flex-wrap:wrap;border-bottom:1px solid #eee;padding:6px 0' },
-        field('สินค้า', sel), field('จำนวน', qty), field('Lot', lot), field('EXP', exp),
-        field('เก็บที่', h('div', { style: 'display:flex;gap:4px' }, loc, locPick))));
+        field('สินค้า', sel, null, 'เลือกรหัสสินค้า (SKU) ที่ลูกค้าคืนกลับมา'), field('จำนวน', qty, null, 'จำนวนสินค้าที่รับคืน'), field('Lot', lot, null, 'เลข Lot/Batch ของสินค้าที่คืน'), field('EXP', exp, null, 'วันหมดอายุของสินค้าที่คืน'),
+        field('เก็บที่', h('div', { style: 'display:flex;gap:4px' }, loc, locPick), null, 'ตำแหน่งบนชั้นวางที่จะนำสินค้าคืนไปจัดเก็บ')));
     }
     addLine();
     const m = modal('รับคืนสินค้าจากลูกค้า',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('ลูกค้า', party), field('อ้างอิง', refNo)),
-        field('เหตุผลการคืน *', reason),
+        h('div', { class: 'grid g2' }, field('ลูกค้า', party, null, 'ชื่อลูกค้าที่ส่งสินค้าคืนกลับมา'), field('อ้างอิง', refNo, null, 'เลขที่เอกสารอ้างอิง เช่น เลขที่ใบส่งของเดิม')),
+        field('เหตุผลการคืน *', reason, null, 'เหตุผลของการคืนสินค้า เช่น สินค้าเสียหาย ส่งผิดรุ่น'),
         linesBox,
         h('button', { class: 'btn', onclick: addLine }, '+ เพิ่มบรรทัด'),
-        field('หมายเหตุ', note)),
+        field('หมายเหตุ', note, null, 'รายละเอียดเพิ่มเติม')),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -190,9 +190,9 @@ export async function docsView() {
     }
     const m = modal(isScrap ? 'ตัดของเสีย (Scrap)' : 'ส่งคืนผู้ขาย (Supplier Return)',
       h('div', {},
-        h('div', { class: 'grid g2' }, party ? field('Supplier', party) : null, field('อ้างอิง', refNo)),
-        field('เหตุผล *', reason),
-        field('เพิ่มรายการจากตำแหน่ง', picker.el),
+        h('div', { class: 'grid g2' }, party ? field('Supplier', party, null, 'ชื่อผู้ขาย/Supplier ที่จะส่งคืนสินค้าให้') : null, field('อ้างอิง', refNo, null, 'เลขที่เอกสารอ้างอิง เช่น เลข PO หรือใบคืนสินค้า')),
+        field('เหตุผล *', reason, null, 'เหตุผลของการส่งคืน/ตัดเสีย เช่น สินค้าเสียหาย หมดอายุ'),
+        field('เพิ่มรายการจากตำแหน่ง', picker.el, null, 'สแกนหรือพิมพ์รหัสตำแหน่งที่มีสินค้าที่ต้องการดำเนินการ'),
         listEl),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),

@@ -65,11 +65,11 @@ export async function settingsView() {
 
     const m = modal(w ? 'แก้ไขคลังสินค้า' : 'เพิ่มคลังสินค้าใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('รหัสคลัง', code), field('ชื่อคลัง', name)),
-        field('ที่อยู่', addr),
+        h('div', { class: 'grid g2' }, field('รหัสคลัง', code, null, 'รหัสย่อของคลังสินค้า เช่น WH1, WH2 ใช้อ้างอิงในระบบ'), field('ชื่อคลัง', name, null, 'ชื่อเต็มของคลังสินค้า เช่น คลังสินค้าหลัก')),
+        field('ที่อยู่', addr, null, 'ที่อยู่จริงของคลังสินค้า'),
         h('div', { class: 'grid g2' },
-          field('ความกว้างผัง (คอลัมน์)', cols), field('ความลึกผัง (แถว)', rows)),
-        status ? field('สถานะ', status) : null),
+          field('ความกว้างผัง (คอลัมน์)', cols, null, 'จำนวนช่องแนวนอนของผังพื้น ใช้วางตำแหน่ง RACK บนแผนที่'), field('ความลึกผัง (แถว)', rows, null, 'จำนวนช่องแนวตั้งของผังพื้น ใช้วางตำแหน่ง RACK บนแผนที่')),
+        status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         w ? h('button', {
@@ -125,9 +125,9 @@ export async function settingsView() {
 
     const m = modal(z ? 'แก้ไขโซน' : 'เพิ่มโซนใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('รหัสโซน', code, 'ต้องไม่ซ้ำทุกคลัง'), field('ชื่อโซน', name)),
-        h('div', { class: 'grid g2' }, field('คลังสินค้า', whSel), field('สีบนผัง', color)),
-        status ? field('สถานะ', status) : null),
+        h('div', { class: 'grid g2' }, field('รหัสโซน', code, 'ต้องไม่ซ้ำทุกคลัง', 'รหัสย่อของโซน เช่น FG (สินค้าสำเร็จรูป), RM (วัตถุดิบ) ต้องไม่ซ้ำทุกคลัง'), field('ชื่อโซน', name, null, 'ชื่อเต็มของโซน เช่น โซนสินค้าสำเร็จรูป')),
+        h('div', { class: 'grid g2' }, field('คลังสินค้า', whSel, null, 'โซนนี้อยู่ในคลังไหน'), field('สีบนผัง', color, null, 'สีที่ใช้แสดง RACK ของโซนนี้บนแผนผังคลัง')),
+        status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         z && !z.rag_count ? h('button', {
@@ -188,10 +188,10 @@ export async function settingsView() {
 
     const m = modal(r ? 'แก้ไขชั้นวาง' : 'เพิ่มชั้นวางใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('หมายเลข RACK', no), field('โซน', zoneSel)),
-        h('div', { class: 'grid g2' }, field('จำนวนชั้น', lvl), field('จำนวนล็อค (แนวกว้าง)', dep)),
-        field('หมายเหตุ', nt),
-        status ? field('สถานะ', status) : null),
+        h('div', { class: 'grid g2' }, field('หมายเลข RACK', no, null, 'หมายเลขชั้นวาง เช่น A01, B02 ใช้สร้างรหัสตำแหน่ง'), field('โซน', zoneSel, null, 'RACK นี้อยู่ในโซนไหน')),
+        h('div', { class: 'grid g2' }, field('จำนวนชั้น', lvl, null, 'จำนวนชั้นของ RACK (นับจากล่างขึ้นบน) เช่น 4 = L1 ถึง L4'), field('จำนวนล็อค (แนวกว้าง)', dep, null, 'จำนวนล็อคแนวกว้าง (ต้องเป็นเลขคู่) แต่ละล็อคเป็น 1 ตำแหน่งจัดเก็บ')),
+        field('หมายเหตุ', nt, null, 'บันทึกเพิ่มเติมเกี่ยวกับ RACK นี้ เช่น ความสูง น้ำหนักที่รับได้'),
+        status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -274,15 +274,15 @@ export async function settingsView() {
 
     const m = modal(s ? 'แก้ไขสินค้า' : 'เพิ่มสินค้าใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('รหัสสินค้า', code), field('ชื่อสินค้า', name)),
-        h('div', { class: 'grid g2' }, field('ประเภทสินค้า', ptype), field('หมวดหมู่', h('div', {}, cat, catCustom))),
-        h('div', { class: 'grid g2' }, field('หน่วยนับ (หน่วยฐาน)', unit), field('อายุสินค้า (เดือน)', shelfLife, 'ใช้คำนวณ % อายุคงเหลือเมื่อ Lot ไม่ระบุวันผลิต')),
-        field('บาร์โค้ด', barcode),
+        h('div', { class: 'grid g2' }, field('รหัสสินค้า', code, null, 'รหัสเฉพาะของสินค้า (SKU Code) ต้องไม่ซ้ำกัน'), field('ชื่อสินค้า', name, null, 'ชื่อเต็มของสินค้าที่แสดงในระบบ')),
+        h('div', { class: 'grid g2' }, field('ประเภทสินค้า', ptype, null, 'ประเภทหลัก เช่น เครื่องสำอาง สกินแคร์ ใช้จัดกลุ่มในรายงาน'), field('หมวดหมู่', h('div', {}, cat, catCustom), null, 'หมวดย่อยของสินค้า เช่น ครีม สบู่ แชมพู')),
+        h('div', { class: 'grid g2' }, field('หน่วยนับ (หน่วยฐาน)', unit, null, 'หน่วยนับเล็กสุดที่ใช้ในระบบ เช่น ชิ้น หลอด ซอง'), field('อายุสินค้า (เดือน)', shelfLife, 'ใช้คำนวณ % อายุคงเหลือเมื่อ Lot ไม่ระบุวันผลิต', 'ระยะเวลาตั้งแต่ผลิตถึงหมดอายุ ใช้คำนวณ % อายุคงเหลือเมื่อ Lot ไม่ระบุวันผลิต')),
+        field('บาร์โค้ด', barcode, null, 'รหัสบาร์โค้ดบนตัวสินค้า ใช้สแกนค้นหาเร็ว'),
         h('div', { class: 'field' },
           h('label', {}, 'หน่วยนับเพิ่มเติม (เช่น ลัง / โหล)'),
           unitsBox,
           h('button', { class: 'btn ghost', onclick: () => addUnitRow() }, '+ เพิ่มหน่วย')),
-        status ? field('สถานะ', status) : null),
+        status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -315,8 +315,8 @@ export async function settingsView() {
       h('div', { class: 'card', style: 'margin-bottom:14px' },
         h('h2', {}, 'เกณฑ์การจัดการอายุสินค้า'),
         h('div', { class: 'row', style: 'align-items:flex-end;flex-wrap:wrap' },
-          field('ย้ายเข้าโปรโมชันเมื่ออายุต่ำกว่า (เดือน)', moveM),
-          field('ตัดออกจากระบบเมื่ออายุต่ำกว่า (เดือน)', cutM),
+          field('ย้ายเข้าโปรโมชันเมื่ออายุต่ำกว่า (เดือน)', moveM, null, 'เมื่อสินค้าเหลืออายุน้อยกว่ากี่เดือน ระบบจะแนะนำให้ย้ายเข้าช่องทางลดราคา/โปรโมชัน'),
+          field('ตัดออกจากระบบเมื่ออายุต่ำกว่า (เดือน)', cutM, null, 'เมื่อสินค้าเหลืออายุน้อยกว่ากี่เดือน ระบบจะแนะนำให้ตัดออก (scrap) เพราะขายไม่ทันแล้ว'),
           h('button', { class: 'btn primary', onclick: async () => {
             try {
               await api.put('/api/settings', { expiry_move_months: moveM.value, expiry_cutoff_months: cutM.value });
@@ -343,9 +343,9 @@ export async function settingsView() {
       h('option', { value: 'INACTIVE', selected: c.status === 'INACTIVE' }, 'ปิดใช้งาน')) : null;
     const m = modal(c ? 'แก้ไขช่องทางขาย' : 'เพิ่มช่องทางขาย',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('รหัสช่องทาง', code), field('ชื่อช่องทาง', name)),
-        field('% อายุคงเหลือขั้นต่ำที่รับได้', pct, 'เช่น MT = 80, GT = 50 — ระบบใช้ตรวจตอนจ่ายออกและในหน้าอายุสินค้า'),
-        status ? field('สถานะ', status) : null),
+        h('div', { class: 'grid g2' }, field('รหัสช่องทาง', code, null, 'รหัสย่อ เช่น MT (Modern Trade), GT (General Trade), ONLINE'), field('ชื่อช่องทาง', name, null, 'ชื่อเต็มของช่องทางขาย')),
+        field('% อายุคงเหลือขั้นต่ำที่รับได้', pct, 'เช่น MT = 80, GT = 50 — ระบบใช้ตรวจตอนจ่ายออกและในหน้าอายุสินค้า', 'สินค้าต้องเหลืออายุอย่างน้อยกี่ % ถึงจะส่งช่องทางนี้ได้ เช่น MT = 80%'),
+        status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -391,9 +391,9 @@ export async function settingsView() {
 
     const m = modal(u ? 'แก้ไขผู้ใช้งาน' : 'เพิ่มผู้ใช้งานใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('ชื่อผู้ใช้', username), field('ชื่อ-นามสกุล', fullname)),
-        h('div', { class: 'grid g2' }, field('บทบาท', role), field('รหัสผ่าน', pw)),
-        status ? field('สถานะ', status) : null),
+        h('div', { class: 'grid g2' }, field('ชื่อผู้ใช้', username, null, 'ชื่อที่ใช้เข้าสู่ระบบ (login) ต้องไม่ซ้ำกัน'), field('ชื่อ-นามสกุล', fullname, null, 'ชื่อจริงของผู้ใช้งาน แสดงในประวัติการทำรายการ')),
+        h('div', { class: 'grid g2' }, field('บทบาท', role, null, 'กำหนดสิทธิ์การใช้งาน: ADMIN ทำได้ทุกอย่าง / STAFF รับ-จ่ายสินค้าได้ / VIEWER ดูข้อมูลอย่างเดียว'), field('รหัสผ่าน', pw, null, 'รหัสผ่านสำหรับเข้าสู่ระบบ')),
+        status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -524,8 +524,8 @@ export async function settingsView() {
 
         h('h3', { style: 'margin:0 0 8px' }, 'รุ่น AI (เว้นว่างใช้ค่าเริ่มต้น)'),
         h('div', { class: 'grid g2' },
-          field('Smart Model (งานวิเคราะห์)', modelSmart),
-          field('Fast Model (งานเร็ว)', modelFast)),
+          field('Smart Model (งานวิเคราะห์)', modelSmart, null, 'รุ่น AI สำหรับงานคิดหนัก เช่น วิเคราะห์เอกสาร สรุปข้อมูล (เว้นว่างใช้ค่าเริ่มต้น)'),
+          field('Fast Model (งานเร็ว)', modelFast, null, 'รุ่น AI สำหรับงานเร็ว เช่น ถาม-ตอบ ค้นหาข้อมูล (เว้นว่างใช้ค่าเริ่มต้น)')),
 
         h('div', { style: 'display:flex;gap:8px;margin-top:20px;align-items:center' }, saveBtn, testBtn, clearBtn),
         testResult));

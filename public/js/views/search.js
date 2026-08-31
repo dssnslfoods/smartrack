@@ -69,9 +69,9 @@ export async function searchView({ params }) {
   const filterRow = h('details', { class: 'filter-box' },
     h('summary', {}, '⚙️ ตัวกรองเพิ่มเติม — อายุคงเหลือ / จำนวน'),
     h('div', { class: 'row', style: 'margin-top:10px' },
-      field('อายุคงเหลืออย่างน้อย (วัน)', minDays),
-      field('อายุคงเหลือไม่เกิน (วัน)', maxDays),
-      field('จำนวนคงเหลืออย่างน้อย', minQty),
+      field('อายุคงเหลืออย่างน้อย (วัน)', minDays, null, 'แสดงเฉพาะสินค้าที่เหลืออายุอย่างน้อยกี่วัน — เว้นว่างคือไม่กำหนด'),
+      field('อายุคงเหลือไม่เกิน (วัน)', maxDays, null, 'แสดงเฉพาะสินค้าที่เหลืออายุไม่เกินกี่วัน — ใช้หาของใกล้หมดอายุ'),
+      field('จำนวนคงเหลืออย่างน้อย', minQty, null, 'แสดงเฉพาะตำแหน่งที่มีสินค้าอย่างน้อยเท่านี้'),
       h('div', { style: 'flex:0' }, clearFilters)));
 
   const query = () => ({

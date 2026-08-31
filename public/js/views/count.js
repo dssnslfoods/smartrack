@@ -49,11 +49,11 @@ async function roundList() {
 
     const m = modal('เปิดรอบนับใหม่',
       h('div', {},
-        h('div', { class: 'grid g2' }, field('คลัง', whSel), field('โซน', zoneSel)),
-        field('ประเภทสินค้า', ptypeSel, 'นับ FG ประจำวันหลัง pick เสร็จ · นับทุกประเภททุกคลังตอนสิ้นเดือน'),
+        h('div', { class: 'grid g2' }, field('คลัง', whSel, null, 'เลือกคลังสินค้าที่ต้องการนับ หรือเลือก "ทุกคลัง" เพื่อนับทั้งหมด'), field('โซน', zoneSel, null, 'เลือกโซนที่ต้องการนับ เช่น FG (สำเร็จรูป), RM (วัตถุดิบ)')),
+        field('ประเภทสินค้า', ptypeSel, 'นับ FG ประจำวันหลัง pick เสร็จ · นับทุกประเภททุกคลังตอนสิ้นเดือน', 'เลือกประเภทสินค้าที่จะนับ เช่น FG นับทุกวัน หรือเลือกทุกประเภทสำหรับนับสิ้นเดือน'),
         h('label', { style: 'display:flex;gap:8px;align-items:center;margin:10px 0' }, incEmpty,
           'รวมตำแหน่งว่างด้วย (จับกรณีระบบว่างแต่ของจริงมี)'),
-        field('หมายเหตุ', note)),
+        field('หมายเหตุ', note, null, 'บันทึกวัตถุประสงค์ของรอบนับ เช่น นับ FG ประจำวัน หรือนับใหญ่สิ้นเดือน')),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -224,9 +224,9 @@ async function roundDetail(roundId) {
     isOpen && auth.can('move') ? h('div', { class: 'card' },
       h('h2', {}, '⚡ นับเร็ว'),
       h('div', { class: 'row' },
-        h('div', { style: 'flex:2' }, field('ตำแหน่ง', locInput)),
-        h('div', { style: 'flex:1' }, field('นับได้', qtyInput)),
-        h('div', { style: 'flex:2' }, field('หมายเหตุ', noteInput)),
+        h('div', { style: 'flex:2' }, field('ตำแหน่ง', locInput, null, 'ตำแหน่งบนชั้นวางที่ต้องการนับ เช่น FG-A01-L1-D1')),
+        h('div', { style: 'flex:1' }, field('นับได้', qtyInput, null, 'จำนวนสินค้าจริงที่นับได้ ณ ตำแหน่งนั้น')),
+        h('div', { style: 'flex:2' }, field('หมายเหตุ', noteInput, null, 'บันทึกเหตุผลหากนับได้ไม่ตรง เช่น สินค้าชำรุด แตกหัก')),
         h('div', { style: 'flex:0;align-self:flex-end;display:flex;gap:6px' },
           aiOn ? h('button', { class: 'btn', title: 'ถ่ายรูปหน้าชั้นวางให้ AI ช่วยนับ', onclick: countFromPhoto }, '📷 นับจากรูป') : null,
           h('button', { class: 'btn primary', onclick: submitCount }, 'บันทึก')))) : null,

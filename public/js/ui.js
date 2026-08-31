@@ -46,8 +46,10 @@ export const confirmBox = (title, message, okLabel = 'ยืนยัน') =>
     ]);
   });
 
-export const field = (label, input, hint) =>
-  h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('div', { class: 'hint' }, hint) : null);
+export const field = (label, input, hint, tip) =>
+  h('div', { class: 'field' },
+    h('label', {}, label, tip ? h('span', { class: 'tip', title: tip }, '?') : null),
+    input, hint ? h('div', { class: 'hint' }, hint) : null);
 
 export function table(columns, rows, { onRow, empty = 'ไม่พบข้อมูล' } = {}) {
   if (!rows.length) return h('div', { class: 'empty-state' }, empty);
