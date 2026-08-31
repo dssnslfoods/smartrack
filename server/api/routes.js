@@ -278,10 +278,18 @@ export const routes = [
 
 /** ตัวกรองของหน้าค้นหาสินค้า (ใช้ร่วมกันระหว่าง API และไฟล์ CSV) */
 function stockFilter(query) {
+  const str = (v) => (v === undefined || v === null || v === '' ? null : String(v));
   return {
     zoneId: int(query.zone_id), ragId: int(query.rag_id), warehouseId: int(query.warehouse_id),
     skuId: int(query.sku_id), minDays: int(query.min_days), maxDays: int(query.max_days),
-    minQty: int(query.min_qty), limit: int(query.limit, 500),
+    minQty: int(query.min_qty), maxQty: int(query.max_qty),
+    minPct: int(query.min_pct), maxPct: int(query.max_pct),
+    productType: str(query.product_type), category: str(query.category),
+    // ชั้นรับได้ทั้งตัวเลข และคำว่า ground / high
+    level: query.level === 'ground' || query.level === 'high' ? query.level : int(query.level),
+    expiryStatus: str(query.expiry_status), expFrom: str(query.exp_from), expTo: str(query.exp_to),
+    lot: str(query.lot), sort: str(query.sort) ?? 'fefo',
+    limit: int(query.limit, 500),
   };
 }
 

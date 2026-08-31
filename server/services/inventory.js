@@ -19,8 +19,22 @@ const logMovement = async (m) =>
  * ค้นหาสินค้าในคลัง — พิมพ์อะไรก็ได้: รหัสสินค้า, ชื่อสินค้า, Lot, บาร์โค้ด,
  * รหัสตำแหน่ง หรือหมายเลขชั้นวาง (เว้นว่าง = แสดงทั้งหมด)
  */
+/** ลำดับการเรียงที่เลือกได้จากหน้าค้นหา — คีย์ต้องอยู่ในนี้เท่านั้น กัน SQL injection */
+const STOCK_SORT = {
+  fefo: '(v.exp_date IS NULL), v.exp_date, v.zone_code, v.rag_no, v.level, v.depth',
+  expiry_desc: '(v.exp_date IS NULL), v.exp_date DESC, v.zone_code, v.rag_no',
+  qty_desc: 'v.quantity DESC, (v.exp_date IS NULL), v.exp_date',
+  qty_asc: 'v.quantity ASC, (v.exp_date IS NULL), v.exp_date',
+  location: 'v.zone_code, v.rag_no, v.level, v.depth',
+  sku: 'v.sku_code, (v.exp_date IS NULL), v.exp_date',
+  newest: 'v.stored_at DESC',
+};
+
 export async function searchStock(q, { zoneId = null, ragId = null, warehouseId = null, skuId = null,
-                                 minDays = null, maxDays = null, minQty = null, limit = 500 } = {}) {
+                                 minDays = null, maxDays = null, minQty = null, maxQty = null,
+                                 minPct = null, maxPct = null, productType = null, category = null,
+                                 level = null, expiryStatus = null, expFrom = null, expTo = null,
+                                 lot = null, sort = 'fefo', limit = 500 } = {}) {
   const term = (q ?? '').trim();
   const params = [];
   let where = '1=1';
@@ -33,15 +47,34 @@ export async function searchStock(q, { zoneId = null, ragId = null, warehouseId 
   if (zoneId) { where += ' AND v.zone_id = ?'; params.push(zoneId); }
   if (ragId) { where += ' AND v.rag_id = ?'; params.push(ragId); }
   if (skuId) { where += ' AND v.sku_id = ?'; params.push(skuId); }
+  if (productType) { where += ' AND s.product_type = ?'; params.push(productType); }
+  if (category) { where += ' AND s.category = ?'; params.push(category); }
+  if (lot) { where += ' AND v.lot_no ILIKE ?'; params.push(like(lot)); }
+  // ชั้น: ระบุตัวเลข = เฉพาะชั้นนั้น, 'ground' = ชั้นล่างสุดหยิบด้วยมือ, 'high' = ต้องใช้รถยก
+  if (level === 'ground') where += ' AND v.level = 1';
+  else if (level === 'high') where += ' AND v.level > 1';
+  else if (level !== null) { where += ' AND v.level = ?'; params.push(level); }
   // กรองตามอายุคงเหลือ — Lot ที่ไม่ระบุวันหมดอายุถือว่าไม่เข้าเงื่อนไข
   if (minDays !== null) { where += ' AND v.days_to_expiry IS NOT NULL AND v.days_to_expiry >= ?'; params.push(minDays); }
   if (maxDays !== null) { where += ' AND v.days_to_expiry IS NOT NULL AND v.days_to_expiry <= ?'; params.push(maxDays); }
+  if (minPct !== null) { where += ' AND v.pct_remaining IS NOT NULL AND v.pct_remaining >= ?'; params.push(minPct); }
+  if (maxPct !== null) { where += ' AND v.pct_remaining IS NOT NULL AND v.pct_remaining <= ?'; params.push(maxPct); }
+  if (expFrom) { where += ' AND v.exp_date >= ?'; params.push(expFrom); }
+  if (expTo) { where += ' AND v.exp_date <= ?'; params.push(expTo); }
+  // สถานะอายุ — ใช้เกณฑ์เดียวกับ expiryState() เพื่อให้ป้ายสีกับตัวกรองตรงกันเสมอ
+  if (expiryStatus === 'EXPIRED') where += ' AND v.days_to_expiry IS NOT NULL AND v.days_to_expiry < 0';
+  else if (expiryStatus === 'CRITICAL') where += ' AND v.days_to_expiry BETWEEN 0 AND 29';
+  else if (expiryStatus === 'WARNING') where += ' AND v.days_to_expiry BETWEEN 30 AND 89';
+  else if (expiryStatus === 'OK') where += ' AND v.days_to_expiry >= 90';
+  else if (expiryStatus === 'NONE') where += ' AND v.exp_date IS NULL';
   if (minQty !== null) { where += ' AND v.quantity >= ?'; params.push(minQty); }
+  if (maxQty !== null) { where += ' AND v.quantity <= ?'; params.push(maxQty); }
 
+  const orderBy = STOCK_SORT[sort] ?? STOCK_SORT.fefo;
   return (await all(
     `SELECT v.*, s.barcode FROM v_stock v JOIN skus s ON s.sku_id = v.sku_id
       WHERE ${where}
-      ORDER BY (v.exp_date IS NULL), v.exp_date, v.zone_code, v.rag_no, v.level, v.depth
+      ORDER BY ${orderBy}
       LIMIT ?`,
     ...params, limit,
   )).map((r) => ({ ...r, expiry: expiryState(r.days_to_expiry), needs_forklift: r.level > 1 }));

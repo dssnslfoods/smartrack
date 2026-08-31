@@ -1,21 +1,21 @@
 // โครงหลักของแอป: เมนู · ช่องค้นหาด้านบน · การสลับหน้า
 import { api, auth, wh } from './api.js';
-import { h, $ } from './ui.js?v=34';
+import { h, $ } from './ui.js?v=35';
 import { loginView } from './views/login.js';
 import { dashboardView } from './views/dashboard.js';
-import { searchView } from './views/search.js?v=34';
-import { pickView } from './views/pick.js?v=34';
-import { overviewView, rackView } from './views/map.js?v=34';
+import { searchView } from './views/search.js?v=35';
+import { pickView } from './views/pick.js?v=35';
+import { overviewView, rackView } from './views/map.js?v=35';
 import { historyView } from './views/history.js';
-import { settingsView } from './views/settings.js?v=34';
+import { settingsView } from './views/settings.js?v=35';
 import { reportsView } from './views/reports.js';
 import { warehouseListView, warehouseLayoutView } from './views/layout.js';
-import { inboundView } from './views/inbound.js?v=34';
-import { outboundView } from './views/outbound.js?v=34';
-import { docsView } from './views/docs.js?v=34';
-import { expiryView } from './views/expiry.js?v=34';
-import { countView } from './views/count.js?v=34';
-import { copilotView, insightsView } from './views/ai.js?v=34';
+import { inboundView } from './views/inbound.js?v=35';
+import { outboundView } from './views/outbound.js?v=35';
+import { docsView } from './views/docs.js?v=35';
+import { expiryView } from './views/expiry.js?v=35';
+import { countView } from './views/count.js?v=35';
+import { copilotView, insightsView } from './views/ai.js?v=35';
 
 const NAV = [
   { path: '#/', icon: '🏠', label: 'หน้าแรก' },

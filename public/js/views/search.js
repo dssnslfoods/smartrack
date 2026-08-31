@@ -1,6 +1,6 @@
 // ค้นหาสินค้า — ตอบคำถามหลัก "สินค้าตัวนี้อยู่ที่ไหน"
 import { api, auth, wh, download } from '../api.js';
-import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill } from '../ui.js?v=34';
+import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill, PTYPE_LABEL } from '../ui.js?v=35';
 import { itemActions } from '../actions.js';
 
 // ---- สเกลสีตามอายุคงเหลือ — ยิ่งแดงยิ่งต้องรีบระบาย ----
@@ -66,31 +66,151 @@ export async function searchView({ params }) {
     h('option', { value: '' }, 'ทุกโซน'),
     ...zones.map((z) => h('option', { value: z.zone_id }, `${z.zone_code} — ${z.zone_name}`)));
 
-  // ---- ตัวกรองเพิ่มเติม: อายุคงเหลือ / จำนวนคงเหลือ ----
-  const minDays = h('input', { type: 'number', min: '0', placeholder: 'เช่น 90' });
-  const maxDays = h('input', { type: 'number', min: '0', placeholder: 'ไม่จำกัด' });
-  const minQty = h('input', { type: 'number', min: '0', placeholder: 'เช่น 100' });
-  const filters = [minDays, maxDays, minQty];
-  filters.forEach((el) => {
+  // ---- ตัวกรองเพิ่มเติม ----
+  const skus = await api.get('/api/skus', { warehouse_id: wh.id }).catch(() => []);
+  const allRags = await api.get('/api/rags', { warehouse_id: wh.id }).catch(() => []);
+  const categories = [...new Set(skus.map((s) => s.category).filter(Boolean))].sort();
+
+  const opt = (v, label, sel) => h('option', { value: v, ...(sel ? { selected: true } : {}) }, label);
+  const num = (ph) => h('input', { type: 'number', min: '0', placeholder: ph });
+
+  const skuSel = h('select', {},
+    opt('', '— ทุกสินค้า —'),
+    ...skus.map((s) => opt(s.sku_id, `${s.sku_code} — ${s.sku_name}`)));
+  const ragSel = h('select', {}, opt('', '— ทุกชั้นวาง —'));
+  const ptypeSel = h('select', {},
+    opt('', '— ทุกประเภท —'),
+    ...Object.entries(PTYPE_LABEL).map(([k, v]) => opt(k, v)));
+  const catSel = h('select', {},
+    opt('', '— ทุกหมวดหมู่ —'), ...categories.map((c) => opt(c, c)));
+  const expStatusSel = h('select', {},
+    opt('', '— ทุกสถานะ —'),
+    opt('EXPIRED', '🔴 หมดอายุแล้ว'),
+    opt('CRITICAL', '🟠 วิกฤต — เหลือไม่ถึง 30 วัน'),
+    opt('WARNING', '🟡 เฝ้าระวัง — เหลือ 30–90 วัน'),
+    opt('OK', '🟢 ปกติ — เหลือเกิน 90 วัน'),
+    opt('NONE', '⚪ ไม่ระบุวันหมดอายุ'));
+  const levelSel = h('select', {},
+    opt('', '— ทุกชั้น —'),
+    opt('ground', '🙌 ชั้นล่าง (L1) — หยิบด้วยมือ'),
+    opt('high', '🏗️ ชั้นสูง (L2+) — ต้องใช้รถยก'),
+    opt('1', 'เฉพาะ L1'), opt('2', 'เฉพาะ L2'), opt('3', 'เฉพาะ L3'), opt('4', 'เฉพาะ L4'));
+  const sortSel = h('select', {},
+    opt('fefo', 'FEFO — ใกล้หมดอายุก่อน'),
+    opt('expiry_desc', 'อายุเหลือมากก่อน'),
+    opt('qty_desc', 'จำนวนมาก → น้อย'),
+    opt('qty_asc', 'จำนวนน้อย → มาก'),
+    opt('location', 'ตามตำแหน่งในคลัง'),
+    opt('sku', 'ตามรหัสสินค้า'),
+    opt('newest', 'จัดเก็บล่าสุดก่อน'));
+
+  const minDays = num('เช่น 90');
+  const maxDays = num('ไม่จำกัด');
+  const minQty = num('เช่น 100');
+  const maxQty = num('ไม่จำกัด');
+  const minPct = num('เช่น 50');
+  const maxPct = num('ไม่จำกัด');
+  const expFrom = h('input', { type: 'date' });
+  const expTo = h('input', { type: 'date' });
+  const lotInput = h('input', { placeholder: 'เช่น 2569-158' });
+
+  // ชั้นวางขึ้นกับโซนที่เลือก — เลือกโซนแล้วรายการชั้นวางต้องแคบลงตาม
+  function syncRags() {
+    const zid = zoneSel.value;
+    const list = zid ? allRags.filter((r) => String(r.zone_id) === String(zid)) : allRags;
+    const keep = ragSel.value;
+    ragSel.replaceChildren(opt('', '— ทุกชั้นวาง —'),
+      ...list.map((r) => opt(r.rag_id, `${r.zone_code}-${r.rag_no}`)));
+    if (list.some((r) => String(r.rag_id) === keep)) ragSel.value = keep;
+  }
+  syncRags();
+  zoneSel.addEventListener('change', syncRags);
+
+  const selects = [zoneSel, skuSel, ragSel, ptypeSel, catSel, expStatusSel, levelSel, sortSel];
+  const inputs = [minDays, maxDays, minQty, maxQty, minPct, maxPct, expFrom, expTo, lotInput];
+  selects.forEach((el) => el.addEventListener('change', () => run()));
+  inputs.forEach((el) => {
     el.addEventListener('change', () => run());
     el.addEventListener('keydown', (e) => e.key === 'Enter' && run());
   });
+
+  const activeCount = () =>
+    [...selects.filter((el) => el !== sortSel), ...inputs].filter((el) => el.value).length;
+
   const clearFilters = h('button', {
     class: 'btn ghost',
-    onclick: () => { filters.forEach((el) => { el.value = ''; }); zoneSel.value = ''; run(); },
-  }, 'ล้างตัวกรอง');
+    onclick: () => {
+      [...selects.filter((el) => el !== sortSel), ...inputs].forEach((el) => { el.value = ''; });
+      sortSel.value = 'fefo';
+      syncRags();
+      run();
+    },
+  }, '✕ ล้างตัวกรองทั้งหมด');
+
+  // ปุ่มลัดสำหรับงานที่ทำบ่อย — กดครั้งเดียวได้ชุดเงื่อนไขที่ใช้จริงหน้างาน
+  const preset = (label, tip, apply) => h('button', {
+    class: 'btn ghost', style: 'font-size:12px;padding:5px 10px', title: tip,
+    onclick: () => {
+      [...selects.filter((el) => el !== sortSel), ...inputs].forEach((el) => { el.value = ''; });
+      syncRags(); apply(); run();
+    },
+  }, label);
+
+  const presets = h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px' },
+    h('span', { class: 'muted', style: 'font-size:12px;align-self:center;margin-right:2px' }, 'ลัด:'),
+    preset('🔴 หมดอายุแล้ว', 'ของที่เลยวันหมดอายุ ต้องตัดออกจากระบบ',
+      () => { expStatusSel.value = 'EXPIRED'; }),
+    preset('🟠 ต้องรีบระบาย (< 30 วัน)', 'ของที่เหลืออายุไม่ถึง 30 วัน',
+      () => { expStatusSel.value = 'CRITICAL'; sortSel.value = 'fefo'; }),
+    preset('🟡 เฝ้าระวัง (30–90 วัน)', 'ของที่ควรวางแผนระบายภายใน 3 เดือน',
+      () => { expStatusSel.value = 'WARNING'; }),
+    preset('⚪ ไม่ระบุวันหมดอายุ', 'Lot ที่ยังไม่ได้กรอกวันหมดอายุ — ควรตามแก้ข้อมูล',
+      () => { expStatusSel.value = 'NONE'; }),
+    preset('🙌 หยิบง่าย (ชั้น L1)', 'ของที่อยู่ชั้นล่าง หยิบด้วยมือได้ ไม่ต้องใช้รถยก',
+      () => { levelSel.value = 'ground'; }),
+    preset('📦 ของเยอะ (500+)', 'ตำแหน่งที่มีของตั้งแต่ 500 หน่วยขึ้นไป',
+      () => { minQty.value = '500'; sortSel.value = 'qty_desc'; }));
 
   const filterRow = h('details', { class: 'filter-box' },
-    h('summary', {}, '⚙️ ตัวกรองเพิ่มเติม — อายุคงเหลือ / จำนวน'),
-    h('div', { class: 'row', style: 'margin-top:10px' },
-      field('อายุคงเหลืออย่างน้อย (วัน)', minDays, null, 'แสดงเฉพาะสินค้าที่เหลืออายุอย่างน้อยกี่วัน — เว้นว่างคือไม่กำหนด'),
-      field('อายุคงเหลือไม่เกิน (วัน)', maxDays, null, 'แสดงเฉพาะสินค้าที่เหลืออายุไม่เกินกี่วัน — ใช้หาของใกล้หมดอายุ'),
-      field('จำนวนคงเหลืออย่างน้อย', minQty, null, 'แสดงเฉพาะตำแหน่งที่มีสินค้าอย่างน้อยเท่านี้'),
-      h('div', { style: 'flex:0' }, clearFilters)));
+    h('summary', {}, '⚙️ ตัวกรองเพิ่มเติม — สินค้า · ตำแหน่ง · อายุ · จำนวน'),
+    h('div', { style: 'margin-top:12px' },
+      presets,
+      h('div', { class: 'row' },
+        field('สินค้า (SKU)', skuSel, null, 'เจาะจงสินค้าตัวเดียว — ใช้เมื่ออยากดูทุก Lot ของสินค้านั้น'),
+        field('ประเภทสินค้า', ptypeSel, null, 'วัตถุดิบ / บรรจุภัณฑ์ / สำเร็จรูป — ตามที่ตั้งไว้ในข้อมูลสินค้า'),
+        field('หมวดหมู่', catSel, null, 'หมวดย่อยของสินค้า เช่น ครีม สบู่ แชมพู')),
+      h('div', { class: 'row' },
+        field('ชั้นวาง (RACK)', ragSel, null, 'เจาะจงชั้นวาง — รายการจะแคบลงตามโซนที่เลือกไว้ด้านบน'),
+        field('ชั้น (Level)', levelSel, null, 'ชั้นล่างหยิบด้วยมือได้ ชั้นสูงต้องใช้รถยก — ใช้วางแผนกำลังคน'),
+        field('Lot / รุ่นการผลิต', lotInput, null, 'ค้นเฉพาะ Lot ที่ต้องการ เช่น ตอนเรียกคืนสินค้า (recall)')),
+      h('div', { class: 'row' },
+        field('สถานะอายุ', expStatusSel, null, 'กรองตามระดับความเร่งด่วน ใช้เกณฑ์เดียวกับป้ายสีในตาราง'),
+        field('อายุคงเหลืออย่างน้อย (วัน)', minDays, null, 'แสดงเฉพาะสินค้าที่เหลืออายุอย่างน้อยกี่วัน — เว้นว่างคือไม่กำหนด'),
+        field('อายุคงเหลือไม่เกิน (วัน)', maxDays, null, 'แสดงเฉพาะสินค้าที่เหลืออายุไม่เกินกี่วัน — ใช้หาของใกล้หมดอายุ')),
+      h('div', { class: 'row' },
+        field('% อายุคงเหลืออย่างน้อย', minPct, null, 'ใช้ตอนเช็คว่าของพอส่งช่องทางที่กำหนด % ขั้นต่ำไว้หรือไม่ เช่น MT = 80%'),
+        field('% อายุคงเหลือไม่เกิน', maxPct, null, 'ใช้หาของที่ % อายุตกลงมาแล้ว ควรย้ายไปช่องทางลดราคา'),
+        field('หมดอายุตั้งแต่วันที่', expFrom, null, 'กรองตามวันหมดอายุจริง — ใช้คู่กับช่องถัดไปเป็นช่วงวันที่')),
+      h('div', { class: 'row' },
+        field('หมดอายุถึงวันที่', expTo, null, 'กรองตามวันหมดอายุจริง เช่น ดูของที่หมดอายุภายในเดือนนี้'),
+        field('จำนวนคงเหลืออย่างน้อย', minQty, null, 'แสดงเฉพาะตำแหน่งที่มีสินค้าอย่างน้อยเท่านี้'),
+        field('จำนวนคงเหลือไม่เกิน', maxQty, null, 'ใช้หาตำแหน่งที่ของใกล้หมด ควรเติมหรือรวมพาเลท')),
+      h('div', { class: 'row' },
+        field('เรียงลำดับ', sortSel, null, 'FEFO = ของที่หมดอายุก่อนขึ้นก่อน ซึ่งเป็นลำดับที่ควรหยิบไปใช้'),
+        h('div', { style: 'flex:2' }),
+        h('div', { style: 'flex:0;align-self:flex-end;padding-bottom:2px' }, clearFilters))));
 
   const query = () => ({
     q, zone_id: zoneSel.value, warehouse_id: wh.id,
-    min_days: minDays.value, max_days: maxDays.value, min_qty: minQty.value,
+    sku_id: skuSel.value, rag_id: ragSel.value,
+    product_type: ptypeSel.value, category: catSel.value,
+    level: levelSel.value, lot: lotInput.value.trim(),
+    expiry_status: expStatusSel.value,
+    min_days: minDays.value, max_days: maxDays.value,
+    min_pct: minPct.value, max_pct: maxPct.value,
+    exp_from: expFrom.value, exp_to: expTo.value,
+    min_qty: minQty.value, max_qty: maxQty.value,
+    sort: sortSel.value,
   });
 
   const summary = h('div', { class: 'muted', style: 'margin:10px 0' });
@@ -345,10 +465,16 @@ export async function searchView({ params }) {
     const t0 = performance.now();
     const rows = await api.get('/api/stock', { ...query(), limit: 500 });
     const ms = Math.round(performance.now() - t0);
-    const filtered = [minDays.value, maxDays.value, minQty.value].some(Boolean);
+    const n = activeCount();
+    const filtered = n > 0;
+    const badge = filtered ? ` · กรองอยู่ ${n} เงื่อนไข` : '';
     summary.textContent = q
-      ? (rows.length ? `พบ ${rows.length} รายการ (${ms} ms)` : `ไม่พบสินค้าที่ตรงกับ "${q}"${filtered ? ' ตามตัวกรองที่เลือก' : ''}`)
-      : `แสดงสินค้า${filtered ? 'ตามตัวกรอง' : 'ทั้งหมดในคลัง'} ${rows.length} รายการ (${ms} ms)`;
+      ? (rows.length ? `พบ ${rows.length} รายการ (${ms} ms)${badge}` : `ไม่พบสินค้าที่ตรงกับ "${q}"${filtered ? ' ตามตัวกรองที่เลือก' : ''}`)
+      : `แสดงสินค้า${filtered ? 'ตามตัวกรอง' : 'ทั้งหมดในคลัง'} ${rows.length} รายการ (${ms} ms)${badge}`;
+    // ให้เห็นจากหัวข้อที่ยังพับอยู่ว่ามีตัวกรองทำงานอยู่กี่ข้อ
+    filterRow.querySelector('summary').textContent =
+      `⚙️ ตัวกรองเพิ่มเติม — สินค้า · ตำแหน่ง · อายุ · จำนวน${filtered ? `  (ใช้อยู่ ${n})` : ''}`;
+    if (filtered) filterRow.open = true;
 
     if (rows.length) {
       lastRows = rows;
