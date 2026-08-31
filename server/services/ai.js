@@ -502,7 +502,7 @@ export async function visionCount({ image, expected = null, sku_name = null, loc
     name: 'count_from_photo',
     description: 'ส่งผลการนับจากรูป',
     model: MODEL.SMART,
-    maxTokens: 1024,
+    maxTokens: 2048,
   });
 
   const counted = Number(data.counted) || 0;

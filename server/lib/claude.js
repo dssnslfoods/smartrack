@@ -321,7 +321,15 @@ async function callGeminiProvider({ messages, system, tools, model, maxTokens, t
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens } };
   if (systemInstruction) body.system_instruction = systemInstruction;
   if (tools?.length) body.tools = [{ function_declarations: tools.map(t => ({ name: t.name, description: t.description, parameters: t.input_schema })) }];
-  if (forceToolName && tools?.length) body.tool_config = { function_calling_config: { mode: 'ANY' } };
+  if (forceToolName && tools?.length) {
+    body.tool_config = { function_calling_config: { mode: 'ANY' } };
+    // รุ่นคิดเชิงเหตุผล (gemini-*-pro) ใช้ maxOutputTokens ร่วมกับ token ที่ใช้ "คิดในใจ"
+    // ถ้าคิดเยอะจนชนเพดานก่อนจะเรียกฟังก์ชันจริง จะได้ผลลัพธ์ว่างแล้วระบบตีกลับว่า "ไม่ได้รูปแบบที่กำหนด"
+    // บางรุ่น (เช่น 3.1-pro) บังคับต้องคิดเสมอ ปิดเป็น 0 ไม่ได้ (จะได้ error "only works in thinking mode")
+    // จึงให้โควตาคิดพอประมาณ แล้วเผื่อพื้นที่แยกต่างหากให้คำตอบจริง ไม่แย่งโควตาที่ผู้เรียกตั้งใจไว้
+    body.generationConfig.thinkingConfig = { thinkingBudget: 512 };
+    body.generationConfig.maxOutputTokens = maxTokens + 512;
+  }
   if (temperature !== undefined) body.generationConfig.temperature = temperature;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -371,12 +379,18 @@ function toGeminiContents(messages, system) {
 
 function fromGeminiResponse(data) {
   const cand = data.candidates?.[0];
-  if (!cand?.content) throw badRequest('Gemini ไม่ได้ตอบกลับ — กรุณาลองใหม่', 'AI_NO_RESULT');
+  if (!cand?.content) {
+    // ไม่มี content เลย มักมาจากโดนตัดตอนกลางคัน (โควตา token, ตัวกรองความปลอดภัย ฯลฯ)
+    // finishReason ช่วยไล่สาเหตุได้ตรงกว่าข้อความทั่วไป
+    const reason = cand?.finishReason ? ` (finishReason: ${cand.finishReason})` : '';
+    throw badRequest(`Gemini ไม่ได้ตอบกลับ — กรุณาลองใหม่${reason}`, 'AI_NO_RESULT');
+  }
   const parts = cand.content.parts || [];
   const content = [];
   let hasToolUse = false;
   let seq = 0;
   for (const p of parts) {
+    if (p.thought) continue; // ส่วน "คิดในใจ" ของโมเดล ไม่ใช่คำตอบจริง ไม่ควรเอามานับเป็น text
     if (p.text != null) content.push({ type: 'text', text: p.text });
     if (p.functionCall) {
       hasToolUse = true;
