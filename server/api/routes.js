@@ -11,6 +11,7 @@ import * as exp from '../services/expiry.js';
 import * as cnt from '../services/counting.js';
 import * as intel from '../services/intelligence.js';
 import * as ai from '../services/ai.js';
+import { getAISettings, saveAISettings, testAIConnection } from '../lib/claude.js';
 import { locationLabels } from '../services/labels.js';
 
 /** [method, path, สิทธิ์ที่ต้องมี (null = ไม่ต้องล็อกอิน), handler] */
@@ -249,6 +250,11 @@ export const routes = [
     warehouseId: int(query.warehouse_id), days: int(query.days, 60) })],
   ['GET', '/api/insights/labor', 'view', ({ query }) => intel.laborPlan({
     warehouseId: int(query.warehouse_id), days: int(query.days, 60) })],
+
+  // ---------------- ตั้งค่า AI ----------------
+  ['GET', '/api/settings/ai', 'manage', () => getAISettings()],
+  ['PUT', '/api/settings/ai', 'manage', async ({ body }) => saveAISettings(body)],
+  ['POST', '/api/settings/ai/test', 'manage', ({ body }) => testAIConnection(body)],
 
   // ---------------- ผู้ช่วย AI ----------------
   ['GET', '/api/ai/status', 'view', () => ({ enabled: ai.aiEnabled() })],

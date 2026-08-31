@@ -3,10 +3,10 @@ import { api } from '../api.js';
 import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=30';
 
 export async function settingsView() {
-  const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users'];
+  const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users', 'ai'];
   const labels = {
     warehouses: 'คลังสินค้า', zones: 'โซน', rags: 'ชั้นวาง (RACK)',
-    skus: 'สินค้า (SKU)', channels: 'ช่องทางขาย', users: 'ผู้ใช้งาน',
+    skus: 'สินค้า (SKU)', channels: 'ช่องทางขาย', users: 'ผู้ใช้งาน', ai: 'ตั้งค่า AI',
   };
   let active = 'warehouses';
 
@@ -26,6 +26,7 @@ export async function settingsView() {
       else if (active === 'rags') await loadRags();
       else if (active === 'skus') await loadSkus();
       else if (active === 'channels') await loadChannels();
+      else if (active === 'ai') await loadAI();
       else await loadUsers();
     } catch (err) { content.replaceChildren(h('div', { class: 'empty-state' }, err.message)); }
   }
@@ -407,6 +408,127 @@ export async function settingsView() {
           } catch (err) { toast(err.message, 'err'); }
         } }, 'บันทึก'),
       ]);
+  }
+
+  // ======== ตั้งค่า AI ========
+  async function loadAI() {
+    const s = await api.get('/api/settings/ai');
+    const providers = s.providers;
+
+    // --- สถานะปัจจุบัน ---
+    const statusEl = h('div', { class: 'ai-status', style: 'display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:12px 16px;border-radius:8px;background:var(--surface, #f8fafc)' },
+      h('span', { style: `display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.has_key ? '#22c55e' : '#ef4444'}` }),
+      h('strong', {}, s.has_key ? `เชื่อมต่อแล้ว — ${providers[s.provider]?.label}` : 'ยังไม่ได้ตั้งค่า'),
+      s.has_key ? h('span', { class: 'muted' }, `Key: ${s.key_hint}`) : null);
+
+    // --- เลือกค่าย ---
+    const providerCards = h('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px' });
+    let selectedProvider = s.provider || 'claude';
+
+    function renderProviderCards() {
+      providerCards.replaceChildren(...Object.entries(providers).map(([key, p]) => {
+        const active = key === selectedProvider;
+        const card = h('label', {
+          style: `display:flex;flex-direction:column;gap:4px;padding:14px 16px;border-radius:10px;cursor:pointer;border:2px solid ${active ? 'var(--primary, #0f766e)' : 'var(--border, #e2e8f0)'};background:${active ? 'var(--primary-bg, #f0fdfa)' : 'transparent'};transition:all .15s`,
+          onclick: () => {
+            selectedProvider = key;
+            renderProviderCards();
+            const dp = providers[key];
+            modelSmart.value = dp.smart;
+            modelFast.value = dp.fast;
+            keyLink.href = dp.keyUrl;
+            keyLink.textContent = dp.keyUrl.replace('https://', '');
+          },
+        },
+          h('div', { style: 'display:flex;align-items:center;gap:8px' },
+            h('input', { type: 'radio', name: 'ai_provider', value: key, checked: active, style: 'accent-color:var(--primary, #0f766e)' }),
+            h('strong', { style: 'font-size:15px' }, p.label)),
+          h('div', { class: 'muted', style: 'font-size:12px;padding-left:24px' }, `Smart: ${p.smart} · Fast: ${p.fast}`));
+        return card;
+      }));
+    }
+
+    // --- API Key ---
+    const keyInput = h('input', { type: 'password', value: '', placeholder: s.has_key ? '(ไม่แสดง — ใส่ค่าใหม่เพื่อเปลี่ยน)' : 'วาง API Key ที่นี่', style: 'flex:1' });
+    const showBtn = h('button', { class: 'btn ghost', type: 'button', onclick: () => {
+      const t = keyInput.type === 'password' ? 'text' : 'password';
+      keyInput.type = t;
+      showBtn.textContent = t === 'password' ? 'แสดง' : 'ซ่อน';
+    } }, 'แสดง');
+
+    const curP = providers[selectedProvider] || providers.claude;
+    const keyLink = h('a', { href: curP.keyUrl, target: '_blank', rel: 'noopener', style: 'font-size:12px' }, curP.keyUrl.replace('https://', ''));
+
+    // --- Models ---
+    const modelSmart = h('input', { value: s.model_smart, placeholder: curP.smart });
+    const modelFast = h('input', { value: s.model_fast, placeholder: curP.fast });
+
+    // --- Test & Save ---
+    const testResult = h('div', { style: 'margin-top:8px;font-size:13px' });
+
+    const testBtn = h('button', { class: 'btn', onclick: async () => {
+      const key = keyInput.value.trim();
+      if (!key && !s.has_key) { toast('กรุณาใส่ API Key ก่อนทดสอบ', 'err'); return; }
+      testResult.textContent = 'กำลังทดสอบ…';
+      testResult.style.color = '';
+      testBtn.disabled = true;
+      try {
+        const r = await api.post('/api/settings/ai/test', { provider: selectedProvider, api_key: key || '__current__' });
+        if (r.ok) {
+          testResult.textContent = `เชื่อมต่อสำเร็จ — ${r.provider}`;
+          testResult.style.color = '#22c55e';
+        } else {
+          testResult.textContent = `ไม่สำเร็จ: ${r.error}`;
+          testResult.style.color = '#ef4444';
+        }
+      } catch (err) {
+        testResult.textContent = `ผิดพลาด: ${err.message}`;
+        testResult.style.color = '#ef4444';
+      }
+      testBtn.disabled = false;
+    } }, 'ทดสอบการเชื่อมต่อ');
+
+    const saveBtn = h('button', { class: 'btn primary', onclick: async () => {
+      saveBtn.disabled = true;
+      try {
+        const body = { provider: selectedProvider, model_smart: modelSmart.value.trim(), model_fast: modelFast.value.trim() };
+        const key = keyInput.value.trim();
+        if (key) body.api_key = key;
+        await api.put('/api/settings/ai', body);
+        toast('บันทึกการตั้งค่า AI เรียบร้อย');
+        await loadAI();
+      } catch (err) { toast(err.message, 'err'); }
+      saveBtn.disabled = false;
+    } }, 'บันทึก');
+
+    const clearBtn = s.has_key ? h('button', { class: 'btn danger', onclick: async () => {
+      try {
+        await api.put('/api/settings/ai', { api_key: '' });
+        toast('ลบ API Key แล้ว');
+        await loadAI();
+      } catch (err) { toast(err.message, 'err'); }
+    } }, 'ลบ API Key') : null;
+
+    renderProviderCards();
+
+    content.replaceChildren(
+      h('div', { style: 'max-width:640px' },
+        statusEl,
+
+        h('h3', { style: 'margin:0 0 8px' }, 'เลือกค่าย AI'),
+        providerCards,
+
+        h('h3', { style: 'margin:0 0 8px' }, 'API Key'),
+        h('div', { style: 'display:flex;gap:8px;align-items:center' }, keyInput, showBtn),
+        h('div', { style: 'margin:4px 0 16px' }, h('span', { class: 'muted', style: 'font-size:12px' }, 'สมัครได้ที่ '), keyLink),
+
+        h('h3', { style: 'margin:0 0 8px' }, 'รุ่น AI (เว้นว่างใช้ค่าเริ่มต้น)'),
+        h('div', { class: 'grid g2' },
+          field('Smart Model (งานวิเคราะห์)', modelSmart),
+          field('Fast Model (งานเร็ว)', modelFast)),
+
+        h('div', { style: 'display:flex;gap:8px;margin-top:20px;align-items:center' }, saveBtn, testBtn, clearBtn),
+        testResult));
   }
 
   renderTabs();

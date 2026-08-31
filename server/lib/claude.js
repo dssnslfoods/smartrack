@@ -1,58 +1,232 @@
-// เชื่อมต่อ Claude API — ใช้ fetch ของ Node 22 ตรงๆ ไม่ต้องลง SDK เพิ่ม
-// ต้องตั้งตัวแปรแวดล้อม ANTHROPIC_API_KEY ก่อนใช้งาน
+// AI Client — รองรับหลายค่าย: Claude (Anthropic) · Gemini (Google) · Grok (xAI)
+// เลือกค่ายและใส่ API Key ผ่านหน้าตั้งค่า หรือตัวแปรแวดล้อม ANTHROPIC_API_KEY (fallback)
 import { badRequest } from './http.js';
+import { all, run } from './db.js';
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
-const VERSION = '2023-06-01';
+// ══════════════════════════════════════════════════════════════
+//  Provider definitions
+// ══════════════════════════════════════════════════════════════
 
-/** รุ่นที่ใช้ — งานคิดหนักใช้ SMART, งานเร็ว/ถูกใช้ FAST */
-export const MODEL = {
-  SMART: process.env.AI_MODEL_SMART || 'claude-sonnet-4-5-20250929',
-  FAST: process.env.AI_MODEL_FAST || 'claude-haiku-4-5-20251001',
+export const PROVIDERS = {
+  claude: { label: 'Claude (Anthropic)', smart: 'claude-sonnet-4-5-20250929', fast: 'claude-haiku-4-5-20251001', keyPrefix: 'sk-ant-', keyUrl: 'https://console.anthropic.com/settings/keys' },
+  gemini: { label: 'Gemini (Google)', smart: 'gemini-2.5-pro', fast: 'gemini-2.5-flash', keyPrefix: 'AI', keyUrl: 'https://aistudio.google.com/apikey' },
+  grok:   { label: 'Grok (xAI)',      smart: 'grok-3',          fast: 'grok-3-mini',          keyPrefix: 'xai-', keyUrl: 'https://console.x.ai' },
 };
 
-export const aiEnabled = () => Boolean(process.env.ANTHROPIC_API_KEY);
+// ══════════════════════════════════════════════════════════════
+//  Config cache — อ่านจาก app_settings + fallback จาก env
+// ══════════════════════════════════════════════════════════════
 
-/** โยน error ภาษาไทยถ้ายังไม่ได้ตั้งค่า API key */
+let _cache = null;
+
+export async function getConfig() {
+  if (_cache) return _cache;
+  try {
+    const rows = await all("SELECT key, value FROM app_settings WHERE key LIKE 'ai_%'");
+    const m = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    const provider = m.ai_provider || 'claude';
+    const p = PROVIDERS[provider] || PROVIDERS.claude;
+    _cache = {
+      provider,
+      api_key: m.ai_api_key || process.env.ANTHROPIC_API_KEY || '',
+      model_smart: m.ai_model_smart || process.env.AI_MODEL_SMART || p.smart,
+      model_fast: m.ai_model_fast || process.env.AI_MODEL_FAST || p.fast,
+    };
+  } catch {
+    _cache = {
+      provider: 'claude',
+      api_key: process.env.ANTHROPIC_API_KEY || '',
+      model_smart: process.env.AI_MODEL_SMART || PROVIDERS.claude.smart,
+      model_fast: process.env.AI_MODEL_FAST || PROVIDERS.claude.fast,
+    };
+  }
+  return _cache;
+}
+
+export function refreshConfig() { _cache = null; }
+
+// Eager-load on import
+getConfig().catch(() => {});
+
+export const MODEL = {
+  get SMART() { return _cache?.model_smart || process.env.AI_MODEL_SMART || PROVIDERS.claude.smart; },
+  get FAST() { return _cache?.model_fast || process.env.AI_MODEL_FAST || PROVIDERS.claude.fast; },
+};
+
+export function aiEnabled() {
+  if (_cache) return Boolean(_cache.api_key);
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
 function requireKey() {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw badRequest('ยังไม่ได้เปิดใช้งาน AI — กรุณาตั้งค่า ANTHROPIC_API_KEY ที่เซิร์ฟเวอร์', 'AI_DISABLED');
+  const key = _cache?.api_key || process.env.ANTHROPIC_API_KEY;
+  if (!key) throw badRequest('ยังไม่ได้ตั้งค่า AI — กรุณาใส่ API Key ในหน้าตั้งค่า', 'AI_DISABLED');
   return key;
 }
 
-/**
- * เรียก Claude Messages API
- * @param {object} o
- * @param {Array}  o.messages  ประวัติสนทนา
- * @param {string} o.system    system prompt
- * @param {Array}  o.tools     เครื่องมือให้ AI เรียกใช้ (optional)
- * @param {string} o.model
- * @param {number} o.maxTokens
- */
-export async function callClaude({ messages, system, tools, model = MODEL.SMART, maxTokens = 2048, temperature } = {}) {
-  const key = requireKey();
+// ══════════════════════════════════════════════════════════════
+//  Settings API helpers
+// ══════════════════════════════════════════════════════════════
+
+function maskKey(key) {
+  if (!key) return '';
+  if (key.length <= 8) return '••••';
+  return key.slice(0, 6) + '••••' + key.slice(-4);
+}
+
+export async function getAISettings() {
+  const cfg = await getConfig();
+  return {
+    provider: cfg.provider,
+    has_key: Boolean(cfg.api_key),
+    key_hint: maskKey(cfg.api_key),
+    model_smart: cfg.model_smart,
+    model_fast: cfg.model_fast,
+    providers: PROVIDERS,
+  };
+}
+
+export async function saveAISettings(body) {
+  const { provider, api_key, model_smart, model_fast } = body;
+  if (provider && !PROVIDERS[provider]) throw badRequest('ค่าย AI ไม่ถูกต้อง');
+
+  const pairs = [];
+  if (provider !== undefined) pairs.push(['ai_provider', provider]);
+  if (api_key !== undefined) pairs.push(['ai_api_key', api_key]);
+  if (model_smart !== undefined) pairs.push(['ai_model_smart', model_smart]);
+  if (model_fast !== undefined) pairs.push(['ai_model_fast', model_fast]);
+
+  for (const [key, value] of pairs) {
+    await run(
+      `INSERT INTO app_settings (key, value) VALUES (?,?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      key, String(value));
+  }
+  refreshConfig();
+  return await getAISettings();
+}
+
+export async function testAIConnection(body) {
+  const { provider, api_key } = body;
+  if (!provider) throw badRequest('กรุณาเลือกค่าย AI');
+  if (!PROVIDERS[provider]) throw badRequest('ค่าย AI ไม่ถูกต้อง');
+  let key = api_key;
+  if (!key || key === '__current__') {
+    const cfg = await getConfig();
+    key = cfg.api_key;
+  }
+  if (!key) throw badRequest('กรุณาใส่ API Key');
+  const p = PROVIDERS[provider];
+  try {
+    switch (provider) {
+      case 'claude': await _testClaude(key, p.fast); break;
+      case 'gemini': await _testGemini(key, p.fast); break;
+      case 'grok':   await _testGrok(key, p.fast); break;
+    }
+    return { ok: true, provider: p.label };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+async function _testClaude(key, model) {
+  const res = await fetchTO('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model, max_tokens: 10, messages: [{ role: 'user', content: 'Hi' }] }),
+  }, 15_000);
+  if (!res.ok) throw apiErr(res, 'Claude');
+}
+
+async function _testGemini(key, model) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+  const res = await fetchTO(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Hi' }] }], generationConfig: { maxOutputTokens: 10 } }),
+  }, 15_000);
+  if (!res.ok) throw apiErr(res, 'Gemini');
+}
+
+async function _testGrok(key, model) {
+  const res = await fetchTO('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, max_tokens: 10, messages: [{ role: 'user', content: 'Hi' }] }),
+  }, 15_000);
+  if (!res.ok) throw apiErr(res, 'Grok');
+}
+
+async function apiErr(res, name) {
+  const text = await res.text().catch(() => '');
+  if (res.status === 401 || res.status === 403) return new Error('API Key ไม่ถูกต้อง');
+  let msg = `${name} ตอบกลับผิดพลาด (${res.status})`;
+  try { msg = JSON.parse(text)?.error?.message ?? msg; } catch {}
+  return new Error(msg);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Public API — ใช้ interface เดิม แต่ dispatch ไปยัง provider ที่เลือก
+// ══════════════════════════════════════════════════════════════
+
+export async function callClaude({ messages, system, tools, model, maxTokens = 2048, temperature, _forceToolName } = {}) {
+  const cfg = await getConfig();
+  requireKey();
+  const m = model || cfg.model_smart;
+  const args = { messages, system, tools, model: m, maxTokens, temperature, apiKey: cfg.api_key, forceToolName: _forceToolName };
+
+  switch (cfg.provider) {
+    case 'gemini': return callGeminiProvider(args);
+    case 'grok':   return callGrokProvider(args);
+    default:       return callClaudeProvider(args);
+  }
+}
+
+export async function callClaudeJSON({ messages, system, schema, name = 'result', description = 'ส่งผลลัพธ์', model = MODEL.SMART, maxTokens = 4096 }) {
+  const reply = await callClaude({
+    messages, system, model, maxTokens,
+    tools: [{ name, description, input_schema: schema }],
+    _forceToolName: name,
+  });
+  const use = toolUsesOf(reply).find((t) => t.name === name);
+  if (!use) throw badRequest('AI ไม่ได้ส่งผลลัพธ์ตามรูปแบบที่กำหนด — กรุณาลองใหม่', 'AI_NO_RESULT');
+  return { data: use.input, usage: reply.usage };
+}
+
+export const textOf = (reply) =>
+  (reply?.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+
+export const toolUsesOf = (reply) => (reply?.content ?? []).filter((c) => c.type === 'tool_use');
+
+export function imageBlock(dataUrl) {
+  const m = /^data:([^;]+);base64,(.+)$/s.exec(String(dataUrl ?? ''));
+  if (!m) throw badRequest('รูปภาพไม่ถูกต้อง — ต้องเป็น data URL แบบ base64');
+  const [, media_type, data] = m;
+  if (!/^image\/(jpeg|png|gif|webp)$/.test(media_type))
+    throw badRequest('รองรับเฉพาะไฟล์ JPG, PNG, GIF, WEBP');
+  return { type: 'image', source: { type: 'base64', media_type, data } };
+}
+
+export function pdfBlock(dataUrl) {
+  const m = /^data:application\/pdf;base64,(.+)$/s.exec(String(dataUrl ?? ''));
+  if (!m) throw badRequest('ไฟล์ PDF ไม่ถูกต้อง');
+  return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: m[1] } };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Provider: Claude (Anthropic)
+// ══════════════════════════════════════════════════════════════
+
+async function callClaudeProvider({ messages, system, tools, model, maxTokens, temperature, apiKey, forceToolName }) {
   const body = { model, max_tokens: maxTokens, messages };
   if (system) body.system = system;
   if (tools?.length) body.tools = tools;
+  if (forceToolName) body.tool_choice = { type: 'tool', name: forceToolName };
   if (temperature !== undefined) body.temperature = temperature;
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 90_000);
-  let res;
-  try {
-    res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': VERSION },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    });
-  } catch (err) {
-    clearTimeout(timer);
-    if (err.name === 'AbortError') throw badRequest('AI ใช้เวลานานเกินไป — กรุณาลองใหม่อีกครั้ง', 'AI_TIMEOUT');
-    throw badRequest(`เชื่อมต่อ AI ไม่สำเร็จ: ${err.message}`, 'AI_NETWORK');
-  }
-  clearTimeout(timer);
-
+  const res = await fetchTO('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     let msg = `AI ตอบกลับผิดพลาด (${res.status})`;
@@ -64,40 +238,193 @@ export async function callClaude({ messages, system, tools, model = MODEL.SMART,
   return await res.json();
 }
 
-/** ดึงเฉพาะข้อความตัวอักษรจากคำตอบ */
-export const textOf = (reply) =>
-  (reply?.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+// ══════════════════════════════════════════════════════════════
+//  Provider: Gemini (Google)
+// ══════════════════════════════════════════════════════════════
 
-/** ดึงคำสั่งเรียกเครื่องมือจากคำตอบ */
-export const toolUsesOf = (reply) => (reply?.content ?? []).filter((c) => c.type === 'tool_use');
+async function callGeminiProvider({ messages, system, tools, model, maxTokens, temperature, apiKey, forceToolName }) {
+  const { contents, systemInstruction } = toGeminiContents(messages, system);
+  const body = { contents, generationConfig: { maxOutputTokens: maxTokens } };
+  if (systemInstruction) body.system_instruction = systemInstruction;
+  if (tools?.length) body.tools = [{ function_declarations: tools.map(t => ({ name: t.name, description: t.description, parameters: t.input_schema })) }];
+  if (forceToolName && tools?.length) body.tool_config = { function_calling_config: { mode: 'ANY' } };
+  if (temperature !== undefined) body.generationConfig.temperature = temperature;
 
-/**
- * ขอคำตอบเป็น JSON ตาม schema ที่กำหนด — บังคับผ่าน tool use จึงไม่ต้อง parse ข้อความเอง
- * คืนค่า object ที่ผ่านการตรวจรูปแบบจากฝั่ง API แล้ว
- */
-export async function callClaudeJSON({ messages, system, schema, name = 'result', description = 'ส่งผลลัพธ์', model = MODEL.SMART, maxTokens = 4096 }) {
-  const reply = await callClaude({
-    messages, system, model, maxTokens,
-    tools: [{ name, description, input_schema: schema }],
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const res = await fetchTO(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
   });
-  const use = toolUsesOf(reply).find((t) => t.name === name);
-  if (!use) throw badRequest('AI ไม่ได้ส่งผลลัพธ์ตามรูปแบบที่กำหนด — กรุณาลองใหม่', 'AI_NO_RESULT');
-  return { data: use.input, usage: reply.usage };
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let msg = `Gemini ตอบกลับผิดพลาด (${res.status})`;
+    try { msg = JSON.parse(text)?.error?.message ?? msg; } catch {}
+    if (res.status === 400 || res.status === 403) msg = 'Gemini API Key ไม่ถูกต้อง';
+    if (res.status === 429) msg = 'เรียกใช้ AI ถี่เกินไป — กรุณารอสักครู่';
+    throw badRequest(msg, 'AI_ERROR');
+  }
+  return fromGeminiResponse(await res.json());
 }
 
-/** สร้าง content block รูปภาพจาก data URL หรือ base64 */
-export function imageBlock(dataUrl) {
-  const m = /^data:([^;]+);base64,(.+)$/s.exec(String(dataUrl ?? ''));
-  if (!m) throw badRequest('รูปภาพไม่ถูกต้อง — ต้องเป็น data URL แบบ base64');
-  const [, media_type, data] = m;
-  if (!/^image\/(jpeg|png|gif|webp)$/.test(media_type))
-    throw badRequest('รองรับเฉพาะไฟล์ JPG, PNG, GIF, WEBP');
-  return { type: 'image', source: { type: 'base64', media_type, data } };
+function toGeminiContents(messages, system) {
+  const contents = [];
+  for (const msg of messages) {
+    const role = msg.role === 'assistant' ? 'model' : 'user';
+    const raw = typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }]
+      : Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: String(msg.content) }];
+    const parts = [];
+    for (const c of raw) {
+      if (c.type === 'text') { parts.push({ text: c.text }); continue; }
+      if (c.type === 'image') { parts.push({ inlineData: { mimeType: c.source.media_type, data: c.source.data } }); continue; }
+      if (c.type === 'document') { parts.push({ inlineData: { mimeType: c.source.media_type, data: c.source.data } }); continue; }
+      if (c.type === 'tool_use') { parts.push({ functionCall: { name: c.name, args: c.input } }); continue; }
+      if (c.type === 'tool_result') {
+        const name = _findToolName(messages, c.tool_use_id);
+        let response;
+        try { response = JSON.parse(c.content); } catch { response = { text: c.content }; }
+        parts.push({ functionResponse: { name, response } });
+        continue;
+      }
+      parts.push({ text: JSON.stringify(c) });
+    }
+    if (parts.length) contents.push({ role, parts });
+  }
+  return { contents, systemInstruction: system ? { parts: [{ text: system }] } : undefined };
 }
 
-/** สร้าง content block เอกสาร PDF */
-export function pdfBlock(dataUrl) {
-  const m = /^data:application\/pdf;base64,(.+)$/s.exec(String(dataUrl ?? ''));
-  if (!m) throw badRequest('ไฟล์ PDF ไม่ถูกต้อง');
-  return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: m[1] } };
+function fromGeminiResponse(data) {
+  const cand = data.candidates?.[0];
+  if (!cand?.content) throw badRequest('Gemini ไม่ได้ตอบกลับ — กรุณาลองใหม่', 'AI_NO_RESULT');
+  const parts = cand.content.parts || [];
+  const content = [];
+  let hasToolUse = false;
+  let seq = 0;
+  for (const p of parts) {
+    if (p.text != null) content.push({ type: 'text', text: p.text });
+    if (p.functionCall) {
+      hasToolUse = true;
+      content.push({ type: 'tool_use', id: `g_${p.functionCall.name}_${seq++}`, name: p.functionCall.name, input: p.functionCall.args || {} });
+    }
+  }
+  return {
+    content,
+    stop_reason: hasToolUse ? 'tool_use' : 'end_turn',
+    usage: { input_tokens: data.usageMetadata?.promptTokenCount || 0, output_tokens: data.usageMetadata?.candidatesTokenCount || 0 },
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Provider: Grok (xAI) — OpenAI-compatible
+// ══════════════════════════════════════════════════════════════
+
+async function callGrokProvider({ messages, system, tools, model, maxTokens, temperature, apiKey, forceToolName }) {
+  const body = { model, max_tokens: maxTokens, messages: toOpenAIMessages(messages, system) };
+  if (tools?.length) body.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
+  if (forceToolName && tools?.length) body.tool_choice = { type: 'function', function: { name: forceToolName } };
+  if (temperature !== undefined) body.temperature = temperature;
+
+  const res = await fetchTO('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    let msg = `Grok ตอบกลับผิดพลาด (${res.status})`;
+    try { msg = JSON.parse(text)?.error?.message ?? msg; } catch {}
+    if (res.status === 401) msg = 'Grok API Key ไม่ถูกต้อง';
+    if (res.status === 429) msg = 'เรียกใช้ AI ถี่เกินไป — กรุณารอสักครู่';
+    throw badRequest(msg, 'AI_ERROR');
+  }
+  return fromOpenAIResponse(await res.json());
+}
+
+function toOpenAIMessages(messages, system) {
+  const out = [];
+  if (system) out.push({ role: 'system', content: system });
+  for (const msg of messages) {
+    const raw = typeof msg.content === 'string' ? [{ type: 'text', text: msg.content }]
+      : Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: String(msg.content) }];
+
+    if (msg.role === 'user') {
+      const toolResults = raw.filter(c => c.type === 'tool_result');
+      if (toolResults.length) {
+        for (const tr of toolResults) out.push({ role: 'tool', tool_call_id: tr.tool_use_id, content: typeof tr.content === 'string' ? tr.content : JSON.stringify(tr.content) });
+        const rest = raw.filter(c => c.type !== 'tool_result');
+        if (rest.length) out.push({ role: 'user', content: _toOpenAIContent(rest) });
+      } else {
+        out.push({ role: 'user', content: _toOpenAIContent(raw) });
+      }
+    } else if (msg.role === 'assistant') {
+      const texts = raw.filter(c => c.type === 'text').map(c => c.text).join('\n');
+      const toolCalls = raw.filter(c => c.type === 'tool_use').map(c => ({
+        id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.input) },
+      }));
+      const m = { role: 'assistant' };
+      if (texts) m.content = texts;
+      else m.content = null;
+      if (toolCalls.length) m.tool_calls = toolCalls;
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+function _toOpenAIContent(blocks) {
+  if (blocks.every(c => c.type === 'text')) return blocks.map(c => c.text).join('\n');
+  return blocks.map(c => {
+    if (c.type === 'text') return { type: 'text', text: c.text };
+    if (c.type === 'image') return { type: 'image_url', image_url: { url: `data:${c.source.media_type};base64,${c.source.data}` } };
+    return { type: 'text', text: JSON.stringify(c) };
+  });
+}
+
+function fromOpenAIResponse(data) {
+  const choice = data.choices?.[0];
+  if (!choice?.message) throw badRequest('Grok ไม่ได้ตอบกลับ — กรุณาลองใหม่', 'AI_NO_RESULT');
+  const msg = choice.message;
+  const content = [];
+  if (msg.content) content.push({ type: 'text', text: msg.content });
+  let hasToolUse = false;
+  if (msg.tool_calls?.length) {
+    hasToolUse = true;
+    for (const tc of msg.tool_calls) {
+      let input = {};
+      try { input = JSON.parse(tc.function.arguments || '{}'); } catch {}
+      content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+    }
+  }
+  return {
+    content,
+    stop_reason: hasToolUse ? 'tool_use' : 'end_turn',
+    usage: { input_tokens: data.usage?.prompt_tokens || 0, output_tokens: data.usage?.completion_tokens || 0 },
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Helpers
+// ══════════════════════════════════════════════════════════════
+
+function _findToolName(messages, toolUseId) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const c = messages[i].content;
+    if (!Array.isArray(c)) continue;
+    const tu = c.find(x => x.type === 'tool_use' && x.id === toolUseId);
+    if (tu) return tu.name;
+  }
+  return 'unknown';
+}
+
+async function fetchTO(url, opts, timeoutMs = 90_000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...opts, signal: ctrl.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') throw badRequest('AI ใช้เวลานานเกินไป — กรุณาลองใหม่อีกครั้ง', 'AI_TIMEOUT');
+    throw badRequest(`เชื่อมต่อ AI ไม่สำเร็จ: ${err.message}`, 'AI_NETWORK');
+  }
 }

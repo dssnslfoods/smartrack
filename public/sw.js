@@ -1,6 +1,6 @@
 // Service Worker — Offline Mode: ค้นหาสินค้า/ดูแผนผังได้แม้เน็ตขัดข้อง
-const SHELL = 'rack-shell-v30';
-const DATA = 'rack-data-v30';
+const SHELL = 'rack-shell-v31';
+const DATA = 'rack-data-v31';
 const SHELL_FILES = [
   '/', '/index.html', '/css/app.css',
   '/js/app.js', '/js/api.js', '/js/ui.js', '/js/actions.js',
