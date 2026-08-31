@@ -11,7 +11,7 @@ import * as exp from '../services/expiry.js';
 import * as cnt from '../services/counting.js';
 import * as intel from '../services/intelligence.js';
 import * as ai from '../services/ai.js';
-import { getAISettings, saveAISettings, testAIConnection } from '../lib/claude.js';
+import { getAISettings, saveAISettings, testAIConnection, listAIModels } from '../lib/claude.js';
 import { locationLabels } from '../services/labels.js';
 
 /** [method, path, สิทธิ์ที่ต้องมี (null = ไม่ต้องล็อกอิน), handler] */
@@ -258,6 +258,7 @@ export const routes = [
   ['GET', '/api/settings/ai', 'manage', () => getAISettings()],
   ['PUT', '/api/settings/ai', 'manage', async ({ body }) => saveAISettings(body)],
   ['POST', '/api/settings/ai/test', 'manage', ({ body }) => testAIConnection(body)],
+  ['GET', '/api/settings/ai/models', 'manage', ({ query }) => listAIModels(query)],
 
   // ---------------- ผู้ช่วย AI ----------------
   ['GET', '/api/ai/status', 'view', () => ({ enabled: ai.aiEnabled() })],

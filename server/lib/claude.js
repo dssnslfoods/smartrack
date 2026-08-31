@@ -7,10 +7,13 @@ import { all, run } from './db.js';
 //  Provider definitions
 // ══════════════════════════════════════════════════════════════
 
+// ชื่อรุ่นเริ่มต้น — เลือกแบบ "latest alias" ไว้ก่อนเมื่อค่ายนั้นมีให้
+// เพราะชื่อรุ่นแบบระบุเวอร์ชันจะถูกยกเลิกเป็นระยะ แล้วระบบจะพังเงียบ ๆ
+// ถ้าต้องการล็อกเวอร์ชัน ให้ตั้งค่าเองในหน้าตั้งค่า AI (มีปุ่มดึงรายชื่อรุ่นที่ใช้ได้จริง)
 export const PROVIDERS = {
-  claude: { label: 'Claude (Anthropic)', smart: 'claude-sonnet-4-5-20250929', fast: 'claude-haiku-4-5-20251001', keyPrefix: 'sk-ant-', keyUrl: 'https://console.anthropic.com/settings/keys' },
-  gemini: { label: 'Gemini (Google)', smart: 'gemini-2.5-pro', fast: 'gemini-2.5-flash', keyPrefix: 'AI', keyUrl: 'https://aistudio.google.com/apikey' },
-  grok:   { label: 'Grok (xAI)',      smart: 'grok-3',          fast: 'grok-3-mini',          keyPrefix: 'xai-', keyUrl: 'https://console.x.ai' },
+  claude: { label: 'Claude (Anthropic)', smart: 'claude-sonnet-5', fast: 'claude-haiku-4-5-20251001', keyPrefix: 'sk-ant-', keyUrl: 'https://console.anthropic.com/settings/keys' },
+  gemini: { label: 'Gemini (Google)', smart: 'gemini-pro-latest', fast: 'gemini-flash-latest', keyPrefix: 'AI', keyUrl: 'https://aistudio.google.com/apikey' },
+  grok:   { label: 'Grok (xAI)',      smart: 'grok-4',            fast: 'grok-4-fast',          keyPrefix: 'xai-', keyUrl: 'https://console.x.ai' },
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -58,6 +61,26 @@ export function aiEnabled() {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
+/**
+ * แปลง error ของผู้ให้บริการเป็นข้อความที่บอกได้ว่าต้องไปแก้ตรงไหน
+ * แยก "รุ่นใช้ไม่ได้" ออกจาก "Key ผิด" ให้ชัด — สองอย่างนี้แก้คนละที่
+ * และผู้ให้บริการมักคืน 400 เหมือนกันทั้งคู่
+ */
+function aiErrMessage(status, raw, label, model) {
+  const s = String(raw ?? '');
+  const modelIssue = /no longer available|not found|does not exist|unsupported|deprecated|invalid model|unknown model/i.test(s)
+    || (status === 404 && /model/i.test(s));
+  if (modelIssue) {
+    return `รุ่น AI "${model}" ใช้งานไม่ได้แล้ว — เปิดหน้า ตั้งค่า → ตั้งค่า AI แล้วกด `
+      + `"ดึงรายชื่อรุ่นที่ใช้ได้" เพื่อเลือกรุ่นใหม่ หรือกด "ใช้รุ่นเริ่มต้น"\n(${label} แจ้งว่า: ${s})`;
+  }
+  if (status === 401 || status === 403) return `${label} API Key ไม่ถูกต้องหรือหมดอายุ — ตรวจสอบในหน้าตั้งค่า AI`;
+  if (status === 429) return 'เรียกใช้ AI ถี่เกินไป — กรุณารอสักครู่';
+  if (status >= 500) return `${label} ขัดข้องชั่วคราว — กรุณาลองใหม่อีกครั้ง`;
+  if (/api[ _-]?key/i.test(s)) return `${label} API Key ไม่ถูกต้อง — ตรวจสอบในหน้าตั้งค่า AI`;
+  return `${label}: ${s}`;
+}
+
 function requireKey() {
   const key = _cache?.api_key || process.env.ANTHROPIC_API_KEY;
   if (!key) throw badRequest('ยังไม่ได้ตั้งค่า AI — กรุณาใส่ API Key ในหน้าตั้งค่า', 'AI_DISABLED');
@@ -103,6 +126,59 @@ export async function saveAISettings(body) {
   }
   refreshConfig();
   return await getAISettings();
+}
+
+/**
+ * ดึงรายชื่อรุ่นที่ API Key นี้ใช้ได้จริงจากผู้ให้บริการ
+ * ชื่อรุ่นเปลี่ยน/ถูกยกเลิกได้ตลอด การถามจากต้นทางจึงแม่นกว่าการฝังชื่อไว้ในโค้ด
+ */
+export async function listAIModels(query = {}) {
+  const cfg = await getConfig();
+  const provider = query.provider || cfg.provider;
+  if (!PROVIDERS[provider]) throw badRequest('ค่าย AI ไม่ถูกต้อง');
+  let key = query.api_key;
+  if (!key || key === '__current__') key = cfg.api_key;
+  if (!key) throw badRequest('กรุณาใส่ API Key ก่อน จึงจะดึงรายชื่อรุ่นได้');
+
+  try {
+    switch (provider) {
+      case 'gemini': return { provider, models: await _modelsGemini(key) };
+      case 'grok': return { provider, models: await _modelsGrok(key) };
+      default: return { provider, models: await _modelsClaude(key) };
+    }
+  } catch (err) {
+    return { provider, models: [], error: err.message };
+  }
+}
+
+async function _modelsClaude(key) {
+  const res = await fetchTO('https://api.anthropic.com/v1/models?limit=100', {
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+  }, 15_000);
+  if (!res.ok) throw apiErr(res, 'Claude');
+  const data = await res.json();
+  return (data.data ?? []).map((m) => ({ id: m.id, label: m.display_name || m.id }));
+}
+
+async function _modelsGemini(key) {
+  const res = await fetchTO(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=200`,
+    {}, 15_000);
+  if (!res.ok) throw apiErr(res, 'Gemini');
+  const data = await res.json();
+  return (data.models ?? [])
+    // เอาเฉพาะรุ่นที่สร้างข้อความได้ ตัดรุ่น embedding/รูปภาพออก
+    .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+    .map((m) => ({ id: String(m.name).replace(/^models\//, ''), label: m.displayName || m.name }));
+}
+
+async function _modelsGrok(key) {
+  const res = await fetchTO('https://api.x.ai/v1/models', {
+    headers: { authorization: `Bearer ${key}` },
+  }, 15_000);
+  if (!res.ok) throw apiErr(res, 'Grok');
+  const data = await res.json();
+  return (data.data ?? []).map((m) => ({ id: m.id, label: m.id }));
 }
 
 export async function testAIConnection(body) {
@@ -229,11 +305,9 @@ async function callClaudeProvider({ messages, system, tools, model, maxTokens, t
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let msg = `AI ตอบกลับผิดพลาด (${res.status})`;
-    try { msg = JSON.parse(text)?.error?.message ?? msg; } catch {}
-    if (res.status === 401) msg = 'ANTHROPIC_API_KEY ไม่ถูกต้อง';
-    if (res.status === 429) msg = 'เรียกใช้ AI ถี่เกินไป — กรุณารอสักครู่แล้วลองใหม่';
-    throw badRequest(msg, 'AI_ERROR');
+    let raw = `AI ตอบกลับผิดพลาด (${res.status})`;
+    try { raw = JSON.parse(text)?.error?.message ?? raw; } catch {}
+    throw badRequest(aiErrMessage(res.status, raw, 'Claude', model), 'AI_ERROR');
   }
   return await res.json();
 }
@@ -257,11 +331,9 @@ async function callGeminiProvider({ messages, system, tools, model, maxTokens, t
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let msg = `Gemini ตอบกลับผิดพลาด (${res.status})`;
-    try { msg = JSON.parse(text)?.error?.message ?? msg; } catch {}
-    if (res.status === 400 || res.status === 403) msg = 'Gemini API Key ไม่ถูกต้อง';
-    if (res.status === 429) msg = 'เรียกใช้ AI ถี่เกินไป — กรุณารอสักครู่';
-    throw badRequest(msg, 'AI_ERROR');
+    let raw = `Gemini ตอบกลับผิดพลาด (${res.status})`;
+    try { raw = JSON.parse(text)?.error?.message ?? raw; } catch {}
+    throw badRequest(aiErrMessage(res.status, raw, 'Gemini', model), 'AI_ERROR');
   }
   return fromGeminiResponse(await res.json());
 }
@@ -277,7 +349,12 @@ function toGeminiContents(messages, system) {
       if (c.type === 'text') { parts.push({ text: c.text }); continue; }
       if (c.type === 'image') { parts.push({ inlineData: { mimeType: c.source.media_type, data: c.source.data } }); continue; }
       if (c.type === 'document') { parts.push({ inlineData: { mimeType: c.source.media_type, data: c.source.data } }); continue; }
-      if (c.type === 'tool_use') { parts.push({ functionCall: { name: c.name, args: c.input } }); continue; }
+      if (c.type === 'tool_use') {
+        const part = { functionCall: { name: c.name, args: c.input } };
+        if (c._geminiSig) part.thoughtSignature = c._geminiSig;
+        parts.push(part);
+        continue;
+      }
       if (c.type === 'tool_result') {
         const name = _findToolName(messages, c.tool_use_id);
         let response;
@@ -303,7 +380,13 @@ function fromGeminiResponse(data) {
     if (p.text != null) content.push({ type: 'text', text: p.text });
     if (p.functionCall) {
       hasToolUse = true;
-      content.push({ type: 'tool_use', id: `g_${p.functionCall.name}_${seq++}`, name: p.functionCall.name, input: p.functionCall.args || {} });
+      content.push({
+        type: 'tool_use', id: `g_${p.functionCall.name}_${seq++}`,
+        name: p.functionCall.name, input: p.functionCall.args || {},
+        // Gemini 3+ บังคับให้ส่ง thoughtSignature กลับมาพร้อม functionCall เดิม
+        // ไม่งั้นจะตีกลับว่า "missing a thought_signature" — เก็บติดไว้กับ tool_use
+        _geminiSig: p.thoughtSignature ?? null,
+      });
     }
   }
   return {
@@ -330,11 +413,9 @@ async function callGrokProvider({ messages, system, tools, model, maxTokens, tem
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let msg = `Grok ตอบกลับผิดพลาด (${res.status})`;
-    try { msg = JSON.parse(text)?.error?.message ?? msg; } catch {}
-    if (res.status === 401) msg = 'Grok API Key ไม่ถูกต้อง';
-    if (res.status === 429) msg = 'เรียกใช้ AI ถี่เกินไป — กรุณารอสักครู่';
-    throw badRequest(msg, 'AI_ERROR');
+    let raw = `Grok ตอบกลับผิดพลาด (${res.status})`;
+    try { raw = JSON.parse(text)?.error?.message ?? raw; } catch {}
+    throw badRequest(aiErrMessage(res.status, raw, 'Grok', model), 'AI_ERROR');
   }
   return fromOpenAIResponse(await res.json());
 }

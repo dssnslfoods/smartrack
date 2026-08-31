@@ -1,6 +1,6 @@
 // ตั้งค่าระบบ — จัดการโซน ชั้นวาง สินค้า ผู้ใช้งาน (เฉพาะ ADMIN)
 import { api } from '../api.js';
-import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=35';
+import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=36';
 
 export async function settingsView() {
   const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users', 'ai'];
@@ -460,8 +460,56 @@ export async function settingsView() {
     const keyLink = h('a', { href: curP.keyUrl, target: '_blank', rel: 'noopener', style: 'font-size:12px' }, curP.keyUrl.replace('https://', ''));
 
     // --- Models ---
-    const modelSmart = h('input', { value: s.model_smart, placeholder: curP.smart });
-    const modelFast = h('input', { value: s.model_fast, placeholder: curP.fast });
+    // พิมพ์เองก็ได้ เลือกจากรายการก็ได้ — ชื่อรุ่นถูกยกเลิกได้ตลอด
+    // จึงมีปุ่มดึงรายชื่อรุ่นที่ Key นี้ใช้ได้จริงจากผู้ให้บริการ
+    const modelSmart = h('input', { value: s.model_smart, placeholder: curP.smart, list: 'ai-models' });
+    const modelFast = h('input', { value: s.model_fast, placeholder: curP.fast, list: 'ai-models' });
+    const modelList = h('datalist', { id: 'ai-models' });
+    const modelNote = h('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' });
+
+    const resetModelBtn = h('button', {
+      class: 'btn ghost', type: 'button', style: 'font-size:12px',
+      title: 'กลับไปใช้รุ่นเริ่มต้นของค่ายที่เลือก',
+      onclick: () => {
+        const dp = providers[selectedProvider] || providers.claude;
+        modelSmart.value = dp.smart;
+        modelFast.value = dp.fast;
+        modelNote.textContent = `ตั้งกลับเป็นค่าเริ่มต้นแล้ว — กด "บันทึก" เพื่อใช้งาน`;
+        modelNote.style.color = '';
+      },
+    }, '↺ ใช้รุ่นเริ่มต้น');
+
+    const loadModelsBtn = h('button', {
+      class: 'btn ghost', type: 'button', style: 'font-size:12px',
+      onclick: async () => {
+        loadModelsBtn.disabled = true;
+        modelNote.textContent = 'กำลังดึงรายชื่อรุ่น…';
+        modelNote.style.color = '';
+        try {
+          const key = keyInput.value.trim();
+          const r = await api.get('/api/settings/ai/models', {
+            provider: selectedProvider, api_key: key || '__current__',
+          });
+          if (r.error) {
+            modelNote.textContent = `ดึงรายชื่อไม่สำเร็จ: ${r.error}`;
+            modelNote.style.color = '#ef4444';
+          } else {
+            modelList.replaceChildren(...r.models.map((m) =>
+              h('option', { value: m.id }, m.label !== m.id ? `${m.label} (${m.id})` : m.id)));
+            const stale = [modelSmart.value, modelFast.value]
+              .filter((v) => v && !r.models.some((m) => m.id === v));
+            modelNote.textContent = stale.length
+              ? `พบ ${r.models.length} รุ่น — ⚠️ รุ่นที่ตั้งไว้ใช้ไม่ได้แล้ว: ${stale.join(', ')} กด "ใช้รุ่นเริ่มต้น" หรือเลือกรุ่นใหม่จากช่องด้านบน`
+              : `พบ ${r.models.length} รุ่น — คลิกที่ช่องรุ่นเพื่อเลือกจากรายการ`;
+            modelNote.style.color = stale.length ? '#ea580c' : '#16a34a';
+          }
+        } catch (err) {
+          modelNote.textContent = `ผิดพลาด: ${err.message}`;
+          modelNote.style.color = '#ef4444';
+        }
+        loadModelsBtn.disabled = false;
+      },
+    }, '🔄 ดึงรายชื่อรุ่นที่ใช้ได้');
 
     // --- Test & Save ---
     const testResult = h('div', { style: 'margin-top:8px;font-size:13px' });
@@ -526,6 +574,9 @@ export async function settingsView() {
         h('div', { class: 'grid g2' },
           field('Smart Model (งานวิเคราะห์)', modelSmart, null, 'รุ่น AI สำหรับงานคิดหนัก เช่น วิเคราะห์เอกสาร สรุปข้อมูล (เว้นว่างใช้ค่าเริ่มต้น)'),
           field('Fast Model (งานเร็ว)', modelFast, null, 'รุ่น AI สำหรับงานเร็ว เช่น ถาม-ตอบ ค้นหาข้อมูล (เว้นว่างใช้ค่าเริ่มต้น)')),
+        modelList,
+        h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, loadModelsBtn, resetModelBtn),
+        modelNote,
 
         h('div', { style: 'display:flex;gap:8px;margin-top:20px;align-items:center' }, saveBtn, testBtn, clearBtn),
         testResult));
