@@ -1,6 +1,6 @@
 // ค้นหาสินค้า — ตอบคำถามหลัก "สินค้าตัวนี้อยู่ที่ไหน"
 import { api, auth, wh, download } from '../api.js';
-import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill } from '../ui.js?v=33';
+import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill } from '../ui.js?v=34';
 import { itemActions } from '../actions.js';
 
 // ---- สเกลสีตามอายุคงเหลือ — ยิ่งแดงยิ่งต้องรีบระบาย ----
@@ -156,7 +156,112 @@ export async function searchView({ params }) {
       h('span', {}, h('i', { style: `background:${NO_EXP.color}` }), NO_EXP.label),
       h('span', { style: 'color:#94a3b8' }, h('i', { style: 'background:#fff;border:2px solid #e2e8f0' }), 'ช่องอื่นในชั้นวาง (ไม่ตรงผลค้นหา)'));
 
-    return h('div', { class: 'smap' }, ...panels, legend);
+    return h('div', { class: 'smap' }, skuSummary(rows), ...panels, legend);
+  }
+
+  // ---- สรุปสินค้าที่ค้นเจอ — ชื่อเต็ม รหัส และยอดรวมทุกตำแหน่ง ----
+  function skuSummary(rows) {
+    const bySku = new Map();
+    for (const r of rows) {
+      const cur = bySku.get(r.sku_code) ?? { name: r.sku_name, code: r.sku_code, unit: r.unit, qty: 0, locs: 0 };
+      cur.qty += Number(r.quantity || 0);
+      cur.locs += 1;
+      bySku.set(r.sku_code, cur);
+    }
+    return h('div', { class: 'smap-sku' },
+      ...[...bySku.values()].map((s) =>
+        h('div', { class: 'smap-sku-row' },
+          h('span', { class: 'n' }, s.name),
+          h('span', { class: 'c' }, s.code),
+          pill(`${s.locs} ตำแหน่ง`, 'blue'),
+          pill(`รวม ${fmtNum(s.qty)} ${s.unit}`, 'green'))),
+      h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+        h('button', { class: 'btn', onclick: () => showFloorOverview(rows) }, '🏭 ดูภาพรวมทั้งคลัง — สินค้านี้อยู่ชั้นวางไหนบ้าง')));
+  }
+
+  // ---- ผังพื้นคลังทั้งคลัง เน้นชั้นวางที่มีสินค้าตัวนี้ — เปิดเป็นหน้าต่างซ้อน ไม่ต้องออกจากหน้าค้นหา ----
+  const rackSpan = (r) => ({
+    cols: Math.max(1, Math.min(4, Math.ceil(r.total_depths / 3))),
+    rows: Math.max(1, Math.min(3, Math.ceil(r.total_levels / 3))),
+  });
+
+  async function showFloorOverview(rows, focusRagId = null) {
+    const body = h('div', { class: 'smap-ovw' }, h('div', { class: 'empty-state' }, 'กำลังโหลดผังคลัง…'));
+    const m = modal('ภาพรวมทั้งคลัง — ตำแหน่งของสินค้าที่ค้นหา', body,
+      [h('button', { class: 'btn primary', onclick: () => m.close() }, 'ปิด')]);
+
+    const whIds = [...new Set(rows.map((r) => r.warehouse_id).filter(Boolean))];
+    const layouts = await Promise.all(whIds.map((id) =>
+      api.get(`/api/warehouses/${id}/layout`).catch(() => null)));
+
+    const panels = layouts.map((data, i) => (data ? floorPanel(data, rows, focusRagId) : null)).filter(Boolean);
+    body.replaceChildren(...(panels.length
+      ? [...panels, h('div', { class: 'smap-legend' },
+          h('b', {}, 'ชั้นวางที่เน้นสี = มีสินค้าตัวนี้อยู่'),
+          ...EXP_SCALE.map((s) => h('span', {}, h('i', { style: `background:${s.color}` }), s.label)),
+          h('span', { style: 'color:#94a3b8' }, 'ชั้นวางที่จางลง = ไม่มีสินค้าตัวนี้'))]
+      : [h('div', { class: 'empty-state' }, 'คลังนี้ยังไม่ได้จัดวางผังพื้น — ดูตำแหน่งได้จากแผนผังชั้นวางด้านหลัง')]));
+  }
+
+  function floorPanel(data, rows, focusRagId) {
+    const { warehouse: info, racks } = data;
+    // สรุปว่าแต่ละชั้นวางมีสินค้าที่ค้นหาอยู่เท่าไร และ Lot ที่ใกล้หมดอายุที่สุดคือกี่วัน
+    const hitBy = new Map();
+    for (const r of rows) {
+      const cur = hitBy.get(r.rag_id) ?? { locs: 0, qty: 0, unit: r.unit, minDays: null };
+      cur.locs += 1;
+      cur.qty += Number(r.quantity || 0);
+      if (r.days_to_expiry !== null && r.days_to_expiry !== undefined)
+        cur.minDays = cur.minDays === null ? r.days_to_expiry : Math.min(cur.minDays, r.days_to_expiry);
+      hitBy.set(r.rag_id, cur);
+    }
+
+    const board = h('div', { class: 'floor find' });
+    board.style.gridTemplateColumns = `repeat(${info.grid_cols}, minmax(48px, 1fr))`;
+    board.style.gridTemplateRows = `repeat(${info.grid_rows}, minmax(48px, auto))`;
+
+    const covered = new Map();
+    for (const r of racks) {
+      if (r.pos_x === null) continue;
+      const s = rackSpan(r);
+      for (let dy = 0; dy < s.rows; dy++)
+        for (let dx = 0; dx < s.cols; dx++) covered.set(`${r.pos_x + dx}:${r.pos_y + dy}`, r);
+    }
+
+    const cells = [];
+    for (let y = 0; y < info.grid_rows; y++) {
+      for (let x = 0; x < info.grid_cols; x++) {
+        const r = racks.find((k) => k.pos_x === x && k.pos_y === y);
+        if (r) {
+          const s = rackSpan(r);
+          const hit = hitBy.get(r.rag_id);
+          const hc = hit ? expColor(hit.minDays) : '#2563eb';
+          cells.push(h('div', {
+            class: `floor-rack ${hit ? 'hit' : ''} ${focusRagId === r.rag_id ? 'selected' : ''}`,
+            style: `--zc:${r.color || '#2563eb'}; --hc:${hc}; grid-column:${r.pos_x + 1}/span ${s.cols}; grid-row:${r.pos_y + 1}/span ${s.rows}`,
+            title: hit
+              ? `${r.zone_code}-${r.rag_no} — พบ ${hit.locs} ตำแหน่ง รวม ${fmtNum(hit.qty)} ${hit.unit}`
+              : `${r.zone_code}-${r.rag_no} — ไม่มีสินค้าตัวนี้`,
+          },
+            h('div', { class: 'fr-header' },
+              h('div', {}, h('div', { class: 'fr-no' }, r.rag_no), h('div', { class: 'fr-zone' }, r.zone_code)),
+              h('div', { class: 'fr-use' }, `${r.occupied}/${r.total - r.disabled}`)),
+            hit ? h('div', { class: 'fr-badge' }, `${fmtNum(hit.qty)} ${hit.unit}`) : null));
+        } else if (!covered.has(`${x}:${y}`)) {
+          cells.push(h('div', { class: 'floor-cell', style: `grid-column:${x + 1}; grid-row:${y + 1}; cursor:default` }));
+        }
+      }
+    }
+    board.replaceChildren(...cells);
+
+    const found = racks.filter((r) => hitBy.has(r.rag_id));
+    return h('div', {},
+      h('div', { class: 'wh-band' },
+        h('h2', { style: 'margin:0;font-size:15px' }, `🏭 ${info.wh_code} — ${info.wh_name}`),
+        pill(`พบใน ${found.length} ชั้นวาง`, found.length ? 'green' : 'gray'),
+        h('span', { class: 'muted', style: 'font-size:12px' },
+          found.length ? found.map((r) => `${r.zone_code}-${r.rag_no}`).join(' · ') : 'ไม่พบในคลังนี้')),
+      h('div', { class: 'floor-wrap' }, board));
   }
 
   function rackPanel(data, hits) {
@@ -182,6 +287,7 @@ export async function searchView({ params }) {
           onclick: () => detail(hit),
         },
           h('div', { class: 'lc' }, `L${c.level}/D${c.depth}`),
+          h('div', { class: 'nm' }, hit.sku_name),
           h('div', { class: 'q' }, fmtNum(hit.quantity)),
           h('div', { class: 'u' }, hit.unit),
           h('div', { class: 'd' }, hit.exp_date ? (hit.expiry?.label ?? '') : 'ไม่ระบุ EXP'));
@@ -196,12 +302,19 @@ export async function searchView({ params }) {
         h('div', {}, disabled ? '🚫' : occupied ? '▪' : '·'));
     };
 
+    // ถ้าทั้งชั้นวางเจอสินค้าตัวเดียว แสดงชื่อเต็มไว้บนหัวเลย ไม่ต้องอ่านจากในช่อง
+    const names = [...new Set(hits.map((r) => r.sku_name))];
+
     return h('div', { class: 'smap-rack' },
       h('div', { class: 'smap-head' },
         h('h3', {}, `RACK ${rag.zone_code}-${rag.rag_no}`),
+        names.length === 1 ? h('span', { style: 'font-weight:700;font-size:13px' }, names[0]) : null,
         pill(`พบ ${hits.length} ตำแหน่ง`, 'blue'),
         pill(`รวม ${fmtNum(totalQty)} ${unit}`, 'green'),
-        h('a', { class: 'sp', href: `#/map/${rag.rag_id}` }, 'เปิดแผนผังเต็ม →')),
+        h('button', {
+          class: 'btn ghost sp', style: 'font-size:12px;padding:4px 10px',
+          onclick: () => showFloorOverview(lastRows, rag.rag_id),
+        }, '🏭 ดูในผังคลัง')),
       h('div', { class: 'smap-grid' },
         h('div', { class: 'smap-dhead' },
           ...Array.from({ length: rag.total_depths }, (_, i) => h('div', {}, `D${i + 1}`))),

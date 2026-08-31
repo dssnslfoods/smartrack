@@ -1,6 +1,6 @@
 // รายงานผู้บริหาร — 5 รายงานหลักสำหรับการตัดสินใจ
 import { api, wh, download } from '../api.js';
-import { h, table, pill, fmtNum, fmtDate, fmtDateTime } from '../ui.js?v=33';
+import { h, table, pill, fmtNum, fmtDate, fmtDateTime } from '../ui.js?v=34';
 
 const TABS = [
   { key: 'inventory', label: '📦 สินค้าคงคลัง' },
