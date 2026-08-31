@@ -224,6 +224,60 @@ tbody tr:hover { background: #f8fafc; }
 /* ปุ่มที่ยังกดไม่ได้เพราะรอข้อมูลอย่างอื่นก่อน — จางลงแต่ยังกดได้ เพื่อให้ขึ้นคำอธิบายว่าต้องทำอะไรก่อน */
 .btn.is-waiting { opacity: .5; }
 
+/* ---------- รายการรูปที่ถ่ายไว้ของตำแหน่งเดียวกัน (นับหลายรูปแล้วรวมยอด) ---------- */
+.shots { border: 1px solid #cdeae6; background: #f7fdfc; border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+.shots-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #0f766e; margin-bottom: 8px; }
+.shot-row {
+  display: flex; align-items: center; gap: 10px; padding: 6px 0;
+  border-top: 1px solid #ddeeeb; font-size: 13px;
+}
+.shot-row img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex: 0 0 auto; }
+.shot-row .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shots-sum {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-top: 9px;
+  border-top: 2px solid #b9e4de; font-size: 14px; color: #0f766e;
+}
+.shots-sum b { font-size: 20px; font-variant-numeric: tabular-nums; }
+
+/* ---------- กล่องสถานะระหว่างรอ AI — ต้องมีอะไรขยับตลอด ไม่งั้นดูเหมือนระบบค้าง ---------- */
+.ai-progress {
+  background: #f0fdfa; border: 1px solid #99d8d0; border-radius: 10px;
+  padding: 12px 14px; margin: 10px 0; color: #0f766e;
+}
+.ai-progress .p-head { display: flex; align-items: center; gap: 9px; font-size: 14px; }
+.ai-progress .p-head b { font-weight: 700; }
+.ai-progress .p-time {
+  margin-left: auto; font-size: 12.5px; font-weight: 700; color: #0d9488;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.ai-progress .p-hint { font-size: 12px; color: #4b7c76; margin-top: 7px; }
+
+.p-spin {
+  width: 15px; height: 15px; flex: 0 0 auto; border-radius: 50%;
+  border: 2.5px solid #b9e4de; border-top-color: #0d9488;
+  animation: p-spin 0.8s linear infinite;
+}
+@keyframes p-spin { to { transform: rotate(360deg); } }
+
+/* แถบวิ่งแบบไม่รู้เปอร์เซ็นต์ — บอกแค่ว่ายังทำงานอยู่ ไม่หลอกว่าใกล้เสร็จแล้ว */
+.ai-progress .p-bar {
+  height: 4px; background: #cdeae6; border-radius: 3px; overflow: hidden; margin-top: 9px;
+}
+.ai-progress .p-bar span {
+  display: block; height: 100%; width: 40%; border-radius: 3px;
+  background: linear-gradient(90deg, #14b8a6, #0f766e);
+  animation: p-slide 1.4s ease-in-out infinite;
+}
+@keyframes p-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p-spin { animation-duration: 2.4s; }
+  .ai-progress .p-bar span { animation: none; width: 100%; opacity: .6; }
+}
+
 .view-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .view-toggle button { border: 0; background: #fff; padding: 7px 14px; font-size: 13px; font-weight: 700; color: var(--muted); cursor: pointer; }
 .view-toggle button.on { background: var(--brand); color: #fff; }

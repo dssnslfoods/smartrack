@@ -1,8 +1,9 @@
 // นับสต็อก (Cycle Count) — เปิดรอบ → สแกนตำแหน่ง+กรอกจำนวน → เทียบผลต่าง → อนุมัติปรับยอด
-import { api, auth } from '../api.js?v=43';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles } from '../ui.js?v=43';
+import { api, auth } from '../api.js?v=44';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles, progress as aiProgress } from '../ui.js?v=44';
 
 const RSTATUS = { OPEN: ['กำลังนับ', 'blue'], APPROVED: ['อนุมัติแล้ว', 'green'], CANCELLED: ['ยกเลิก', 'gray'] };
+const CONF = { HIGH: ['มั่นใจสูง', 'green'], MEDIUM: ['มั่นใจปานกลาง', 'amber'], LOW: ['มั่นใจต่ำ', 'red'] };
 
 export async function countView({ match }) {
   const roundId = match[1] ? Number(match[1]) : null;
@@ -129,6 +130,59 @@ async function roundDetail(roundId) {
   const locInput = scanInput('สแกน/พิมพ์รหัสตำแหน่ง แล้วกด Enter', () => qtyInput.focus(), { autofocus: true });
   qtyInput.addEventListener('keydown', (e) => e.key === 'Enter' && submitCount());
 
+  // ---- รายการรูปที่ถ่ายไว้ของตำแหน่งปัจจุบัน ----
+  // ชั้นวางลึกหรือของกองสูงมักถ่ายรูปเดียวไม่ครบ ต้องถ่ายหลายรูปแล้วเอามารวมกัน
+  // เก็บทีละรูปไว้ให้เห็น จะได้ตรวจย้อนได้ว่ายอดรวมมาจากรูปไหนบ้าง และลบเฉพาะรูปที่ผิดได้
+  let shots = [];
+  let shotsFor = null;           // รูปชุดนี้เป็นของตำแหน่งไหน
+  const shotsBox = h('div', {});
+
+  const shotsTotal = () => shots.reduce((sum, s) => sum + s.counted, 0);
+
+  function renderShots() {
+    if (!shots.length) { shotsBox.replaceChildren(); return; }
+    const total = shotsTotal();
+    shotsBox.replaceChildren(h('div', { class: 'shots' },
+      h('div', { class: 'shots-head' },
+        h('b', {}, `📷 รูปที่ถ่ายไว้ ${shots.length} รูป — ${shotsFor}`),
+        h('button', {
+          class: 'btn ghost', style: 'font-size:12px;padding:3px 9px;margin-left:auto',
+          title: 'ล้างรูปทั้งหมดของตำแหน่งนี้ แล้วเริ่มนับใหม่',
+          onclick: () => { shots = []; shotsFor = null; renderShots(); },
+        }, '🗑️ ล้างทั้งหมด')),
+      ...shots.map((s, i) => h('div', { class: 'shot-row' },
+        h('img', { src: s.thumb, alt: `รูปที่ ${i + 1}` }),
+        h('div', { style: 'min-width:0' },
+          h('div', {}, h('b', {}, `รูปที่ ${i + 1}: ${fmtNum(s.counted)}`), ' ', pill(...(CONF[s.confidence] ?? ['-', 'gray']))),
+          h('div', { class: 'muted', style: 'font-size:11.5px' }, s.basis)),
+        h('button', {
+          class: 'btn ghost', style: 'font-size:12px;padding:3px 8px;margin-left:auto',
+          title: `เอารูปที่ ${i + 1} ออกจากยอดรวม`,
+          onclick: () => { shots.splice(i, 1); if (!shots.length) shotsFor = null; renderShots(); },
+        }, '✕'))),
+      h('div', { class: 'shots-sum' },
+        h('span', {}, 'รวมทุกรูป'),
+        h('b', {}, fmtNum(total)),
+        h('button', {
+          class: 'btn primary', style: 'font-size:12.5px;padding:5px 12px;margin-left:auto',
+          title: 'นำยอดรวมจากทุกรูปไปใส่ในช่อง "นับได้" เพื่อตรวจก่อนบันทึก',
+          onclick: () => {
+            qtyInput.value = String(total);
+            noteInput.value = `นับจาก ${shots.length} รูป (${shots.map((s) => fmtNum(s.counted)).join('+')})`.slice(0, 200);
+            qtyInput.focus(); qtyInput.select();
+            toast(`ใส่ยอดรวม ${fmtNum(total)} ให้แล้ว — ตรวจแล้วกดบันทึก`);
+          },
+        }, `↓ ใช้ยอดรวม ${fmtNum(total)}`))));
+  }
+
+  // ถ้าเปลี่ยนไปนับตำแหน่งอื่น รูปชุดเดิมใช้ไม่ได้แล้ว ต้องล้างทิ้ง กันเอายอดข้ามตำแหน่ง
+  function dropShotsIfLocationChanged() {
+    const code = locInput.value.trim().toUpperCase();
+    if (shots.length && shotsFor && code !== shotsFor) {
+      shots = []; shotsFor = null; renderShots();
+    }
+  }
+
   async function submitCount() {
     const code = locInput.value.trim();
     if (!code || qtyInput.value === '') { toast('กรอกตำแหน่งและจำนวนก่อน', 'err'); return; }
@@ -141,7 +195,9 @@ async function roundDetail(roundId) {
         : `⚠️ ${code} ต่าง ${r.variance > 0 ? '+' : ''}${fmtNum(r.variance)} (ระบบ ${fmtNum(r.expected_qty)} / นับได้ ${fmtNum(r.counted_qty)})`,
         r.variance === 0 ? 'ok' : 'err');
       locInput.value = ''; qtyInput.value = ''; noteInput.value = '';
+      shots = []; shotsFor = null; renderShots();
       locInput.focus();
+      syncPhotoBtn();
       await refresh();
     } catch (err) { toast(err.message, 'err'); }
   }
@@ -153,11 +209,14 @@ async function roundDetail(roundId) {
     if (!photoBtn) return;
     const ready = Boolean(locInput.value.trim());
     photoBtn.classList.toggle('is-waiting', !ready);
-    photoBtn.title = ready
-      ? `ถ่ายรูปชั้นวางที่ ${locInput.value.trim().toUpperCase()} ให้ AI ช่วยประมาณจำนวน — ตัวเลขที่ได้จะเติมลงช่อง "นับได้" ให้ตรวจ ต้องกดบันทึกเองเสมอ`
-      : '① ใส่รหัสตำแหน่งในช่องซ้ายก่อน ② แล้วค่อยกดปุ่มนี้เพื่อถ่ายรูปให้ AI ช่วยนับ';
+    const code = locInput.value.trim().toUpperCase();
+    photoBtn.title = !ready
+      ? '① ใส่รหัสตำแหน่งในช่องซ้ายก่อน ② แล้วค่อยกดปุ่มนี้เพื่อถ่ายรูปให้ AI ช่วยนับ'
+      : shotsFor === code && shots.length
+        ? `ถ่ายรูปเพิ่มที่ ${code} — ตอนนี้เก็บไว้แล้ว ${shots.length} รูป รวม ${fmtNum(shotsTotal())}`
+        : `ถ่ายรูปชั้นวางที่ ${code} ให้ AI ช่วยประมาณจำนวน — ถ่ายได้หลายรูปแล้วรวมยอดกัน ต้องตรวจและกดบันทึกเองเสมอ`;
   }
-  locInput.addEventListener('input', syncPhotoBtn);
+  locInput.addEventListener('input', () => { syncPhotoBtn(); dropShotsIfLocationChanged(); });
   syncPhotoBtn();
 
   // ---- นับจากรูปถ่าย: AI ช่วยประมาณ แล้วเติมช่องจำนวนให้คนตรวจก่อนบันทึก ----
@@ -175,13 +234,25 @@ async function roundDetail(roundId) {
     catch (err) { toast(err.message, 'err'); return; }
     if (!files.length) return;
 
-    toast('🧠 กำลังนับจากรูป…');
+    // แสดงรูปที่ถ่ายพร้อมแถบสถานะค้างไว้ ให้เห็นว่ากำลังทำงานอยู่จริงจนกว่าจะได้ผล
+    const prog = aiProgress('', {
+      steps: [`กำลังส่งรูปให้ AI ดู — ${code}`, 'AI กำลังไล่นับของในรูป…', 'กำลังเทียบกับยอดในระบบ…', 'ใกล้เสร็จแล้ว…'],
+    });
+    const waitModal = modal(`📷 นับจากรูป — ${code}`,
+      h('div', {},
+        h('img', { src: files[0], style: 'width:100%;max-height:220px;object-fit:contain;border:1px solid var(--line);border-radius:8px' }),
+        prog.el),
+      []);
+    photoBtn.disabled = true;
     try {
       const r = await api.post('/api/ai/vision-count', {
         image: files[0], expected: line?.expected_qty ?? null,
         sku_name: line?.sku_name ?? null, location_code: code,
       });
-      const conf = { HIGH: ['มั่นใจสูง', 'green'], MEDIUM: ['มั่นใจปานกลาง', 'amber'], LOW: ['มั่นใจต่ำ', 'red'] }[r.confidence] ?? ['-', 'gray'];
+      prog.stop(); waitModal.close();
+      const conf = CONF[r.confidence] ?? ['-', 'gray'];
+      // ถ้ามีรูปของตำแหน่งนี้อยู่แล้ว บอกให้เห็นว่าถ้าบวกเพิ่มจะได้เท่าไร
+      const already = shotsFor === code ? shotsTotal() : 0;
       const m = modal(`นับจากรูป — ${code}`,
         h('div', {},
           h('div', { style: 'display:flex;gap:10px;align-items:center;margin-bottom:10px' },
@@ -189,6 +260,8 @@ async function roundDetail(roundId) {
             h('div', {}, pill(...conf),
               r.expected !== null ? h('div', { class: 'muted', style: 'font-size:13px;margin-top:3px' },
                 `ระบบบันทึกไว้ ${fmtNum(r.expected)} · ต่าง ${r.variance > 0 ? '+' : ''}${fmtNum(r.variance)}`) : null)),
+          already ? h('div', { class: 'note', style: 'background:#f0fdfa;border-color:#99d8d0;color:#0f766e' },
+            `ตำแหน่งนี้ถ่ายไว้แล้ว ${shots.length} รูป รวม ${fmtNum(already)} — ถ้าบวกรูปนี้เข้าไปจะได้ ${fmtNum(already + r.counted)}`) : null,
           h('img', { src: files[0], style: 'width:100%;max-height:230px;object-fit:contain;border:1px solid var(--line);border-radius:8px;margin-bottom:10px' }),
           h('p', { style: 'font-size:14px' }, h('strong', {}, 'วิธีนับ: '), r.counting_basis),
           r.visible_labels?.length ? h('p', { style: 'font-size:13px' },
@@ -199,14 +272,33 @@ async function roundDetail(roundId) {
           h('p', { class: 'muted', style: 'font-size:12.5px;margin-top:10px' }, `ℹ️ ${r.disclaimer}`)),
         [
           h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-          h('button', { class: 'btn primary', title: 'เติมตัวเลขที่ AI ประมาณได้ลงช่อง "นับได้" เพื่อให้ตรวจก่อน — ยังไม่บันทึก ต้องกดปุ่มบันทึกเองอีกครั้ง', onclick: () => {
+          // บวกสะสม: ใช้เมื่อชั้นวางลึกหรือของกองสูง ถ่ายรูปเดียวไม่เห็นครบ
+          h('button', {
+            class: 'btn', style: 'margin-right:auto',
+            title: 'เก็บรูปนี้เข้ารายการเพื่อรวมกับรูปอื่นของตำแหน่งเดียวกัน — ถ่ายต่อได้เรื่อย ๆ แล้วค่อยใช้ยอดรวม',
+            onclick: () => {
+              if (shotsFor !== code) { shots = []; shotsFor = code; }
+              shots.push({ counted: r.counted, confidence: r.confidence, basis: r.counting_basis, thumb: files[0] });
+              renderShots();
+              syncPhotoBtn();
+              m.close();
+              toast(`เก็บรูปที่ ${shots.length} แล้ว — รวม ${fmtNum(shotsTotal())} · ถ่ายเพิ่มได้อีก`);
+            },
+          }, '➕ บวกเข้ายอดรวม'),
+          h('button', { class: 'btn primary', title: 'ใช้ตัวเลขจากรูปนี้รูปเดียว เติมลงช่อง "นับได้" เพื่อให้ตรวจก่อน — ยังไม่บันทึก ต้องกดปุ่มบันทึกเองอีกครั้ง', onclick: () => {
             qtyInput.value = String(r.counted);
             noteInput.value = `นับจากรูป (${r.confidence}) — ${r.counting_basis}`.slice(0, 200);
             m.close(); qtyInput.focus(); qtyInput.select();
             toast('เติมจำนวนให้แล้ว — ตรวจสอบแล้วกดบันทึก');
-          } }, '✓ ใช้ตัวเลขนี้'),
+          } }, '✓ ใช้เฉพาะรูปนี้'),
         ]);
-    } catch (err) { toast(err.message, 'err'); }
+    } catch (err) {
+      prog.stop(); waitModal.close();
+      toast(`นับจากรูปไม่สำเร็จ: ${err.message}`, 'err');
+    } finally {
+      prog.stop();
+      photoBtn.disabled = false;
+    }
   }
 
   async function approve() {
@@ -251,7 +343,8 @@ async function roundDetail(roundId) {
         h('div', { style: 'flex:2' }, field('หมายเหตุ', noteInput, null, 'บันทึกเหตุผลหากนับได้ไม่ตรง เช่น สินค้าชำรุด แตกหัก')),
         h('div', { style: 'flex:0;align-self:flex-end;display:flex;gap:6px' },
           photoBtn,
-          h('button', { class: 'btn primary', title: 'บันทึกจำนวนที่นับได้ของตำแหน่งนี้ แล้วเทียบผลต่างกับยอดในระบบทันที (ยอดสต๊อกจะยังไม่เปลี่ยนจนกว่าจะอนุมัติรอบ)', onclick: submitCount }, 'บันทึก')))) : null,
+          h('button', { class: 'btn primary', title: 'บันทึกจำนวนที่นับได้ของตำแหน่งนี้ แล้วเทียบผลต่างกับยอดในระบบทันที (ยอดสต๊อกจะยังไม่เปลี่ยนจนกว่าจะอนุมัติรอบ)', onclick: submitCount }, 'บันทึก'))),
+      shotsBox) : null,
     h('div', { class: 'card' },
       h('div', { class: 'card-head' },
         h('h2', {}, 'บรรทัดนับทั้งหมด'),

@@ -1,6 +1,6 @@
 // รับสินค้าเข้าคลัง (GRN) — หลายรายการ/หลาย Lot ต่อใบ + QC + อ้างอิงเลข PO
-import { api, auth } from '../api.js?v=43';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles } from '../ui.js?v=43';
+import { api, auth } from '../api.js?v=44';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles , progress } from '../ui.js?v=44';
 
 export async function inboundView() {
   const [skus, zones, aiStatus] = await Promise.all([
@@ -97,6 +97,8 @@ export async function inboundView() {
   // ---------------- สแกนใบส่งของด้วย AI ----------------
   // AI อ่านเอกสารแล้วเติมฟอร์มให้เท่านั้น — ไม่บันทึกอะไร คนต้องตรวจและกดบันทึกเอง
   const scanStatus = h('div', {});
+  // ปิดปุ่มสแกนระหว่างที่ AI ทำงาน กันกดซ้ำแล้วยิงซ้อนกันหลายรอบ
+  const scanBtns = [];
 
   async function scanDoc(capture) {
     let files;
@@ -105,13 +107,26 @@ export async function inboundView() {
     } catch (err) { toast(err.message, 'err'); return; }
     if (!files.length) return;
 
-    scanStatus.replaceChildren(h('div', { class: 'note' , style: 'background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a' },
-      `🧠 กำลังอ่านเอกสาร ${files.length} ไฟล์…`));
+    // อ่านเอกสารใช้เวลาหลายสิบวินาที ต้องมีสถานะค้างไว้ให้เห็นตลอด ไม่ใช่ข้อความนิ่ง ๆ
+    const prog = progress('', {
+      steps: [
+        `กำลังอัปโหลดเอกสาร ${files.length} ไฟล์…`,
+        'AI กำลังอ่านข้อความบนเอกสาร…',
+        'กำลังจับคู่ชื่อสินค้ากับรหัสในระบบ…',
+        'กำลังตรวจ Lot และวันหมดอายุ…',
+        'ใกล้เสร็จแล้ว…',
+      ],
+    });
+    scanStatus.replaceChildren(prog.el);
+    for (const b of scanBtns) b.disabled = true;
     try {
       const r = await api.post('/api/ai/scan-receiving', { files });
       applyScan(r);
     } catch (err) {
       scanStatus.replaceChildren(h('div', { class: 'note bad' }, `อ่านเอกสารไม่สำเร็จ: ${err.message}`));
+    } finally {
+      prog.stop();
+      for (const b of scanBtns) b.disabled = false;
     }
   }
 
@@ -227,8 +242,8 @@ export async function inboundView() {
             h('p', { class: 'muted', style: 'margin:2px 0 0;font-size:13.5px' },
               'ถ่ายรูปหรือแนบไฟล์ใบส่งของ/PO แล้ว AI จะอ่านรายการมาเติมให้ — ตรวจก่อนบันทึกเสมอ')),
           h('div', { class: 'actions' },
-            h('button', { class: 'btn', title: 'เปิดกล้องถ่ายรูปใบส่งของ/PO ให้ AI อ่านรายการมาเติมฟอร์มให้ — ระบบยังไม่บันทึก ต้องตรวจทุกบรรทัดก่อนกดบันทึกเสมอ', onclick: () => scanDoc('environment') }, '📷 ถ่ายรูป'),
-            h('button', { class: 'btn primary', title: 'แนบไฟล์รูปหรือ PDF ของใบส่งของ/PO ให้ AI อ่านรายการมาเติมฟอร์มให้ (แนบได้หลายไฟล์) — ต้องตรวจก่อนบันทึกเสมอ', onclick: () => scanDoc(null) }, '📎 แนบไฟล์'))),
+            scanBtns[0] = h('button', { class: 'btn', title: 'เปิดกล้องถ่ายรูปใบส่งของ/PO ให้ AI อ่านรายการมาเติมฟอร์มให้ — ระบบยังไม่บันทึก ต้องตรวจทุกบรรทัดก่อนกดบันทึกเสมอ', onclick: () => scanDoc('environment') }, '📷 ถ่ายรูป'),
+            scanBtns[1] = h('button', { class: 'btn primary', title: 'แนบไฟล์รูปหรือ PDF ของใบส่งของ/PO ให้ AI อ่านรายการมาเติมฟอร์มให้ (แนบได้หลายไฟล์) — ต้องตรวจก่อนบันทึกเสมอ', onclick: () => scanDoc(null) }, '📎 แนบไฟล์'))),
         scanStatus) : null,
       h('div', { class: 'card' },
         h('h2', {}, '1. ข้อมูลเอกสาร'),

@@ -1,7 +1,7 @@
 // ผู้ช่วย AI + หน้าวิเคราะห์เชิงลึก
 // ตัวเลขทั้งหมดมาจาก /api/insights/* (คำนวณล้วน) ส่วนคำแนะนำมาจาก /api/ai/* (ต้องเปิด AI)
-import { api, auth, wh } from '../api.js?v=43';
-import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill } from '../ui.js?v=43';
+import { api, auth, wh } from '../api.js?v=44';
+import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill, progress } from '../ui.js?v=44';
 
 const RISK = {
   EXPIRED: { label: 'หมดอายุแล้ว', color: 'red' },
@@ -110,11 +110,20 @@ function explainButton(topic, mount, enabled) {
   if (!enabled) return null;
   const btn = h('button', { class: 'btn', title: 'ให้น้องสต๊อคอ่านตัวเลขในตารางนี้แล้วสรุปเป็นภาษาคนว่าควรทำอะไรก่อน — เป็นคำแนะนำเท่านั้น ไม่แก้ไขข้อมูลใด ๆ', onclick: async () => {
     btn.disabled = true; btn.textContent = '📦 น้องสต๊อคกำลังคิด…';
+    const prog = progress('', {
+      steps: [`${NONG} กำลังอ่านตัวเลขในหน้านี้…`, 'กำลังเรียบเรียงคำแนะนำ…', 'ใกล้เสร็จแล้ว…'],
+    });
+    mount.replaceChildren(prog.el);
     try {
       const r = await api.get('/api/ai/explain', { topic, warehouse_id: wh.id });
       mount.replaceChildren(briefCard(r.brief, { title: `📦 ${NONG} แนะนำว่า` }) ?? h('div'));
-    } catch (err) { toast(err.message, 'err'); }
-    btn.disabled = false; btn.textContent = '📦 ให้น้องสต๊อคอธิบาย';
+    } catch (err) {
+      mount.replaceChildren(h('div', { class: 'note bad' }, `ขออภัยครับ สรุปไม่สำเร็จ: ${err.message}`));
+      toast(err.message, 'err');
+    } finally {
+      prog.stop();
+      btn.disabled = false; btn.textContent = '📦 ให้น้องสต๊อคอธิบาย';
+    }
   } }, '📦 ให้น้องสต๊อคอธิบาย');
   return btn;
 }
@@ -180,8 +189,12 @@ export async function copilotView() {
     history.push({ role: 'user', content: text });
     renderLog();
 
+    // นับเวลาที่รอไปด้วย — คำถามที่ต้องเรียกเครื่องมือหลายรอบใช้เวลาได้ถึงครึ่งนาที
+    const waited = h('span', { class: 'muted', style: 'font-size:11.5px;margin-left:6px' }, '');
+    let secs = 0;
+    const tick = setInterval(() => { waited.textContent = `(${++secs} วินาที)`; }, 1000);
     const thinking = bubble('assistant',
-      h('span', { class: 'muted nong-typing' }, 'ขอค้นข้อมูลแป๊บนะครับ', h('i'), h('i'), h('i')), 'think');
+      h('span', { class: 'muted nong-typing' }, 'ขอค้นข้อมูลแป๊บนะครับ', h('i'), h('i'), h('i'), waited), 'think');
     log.append(thinking);
     log.scrollTop = log.scrollHeight;
     sendBtn.disabled = true; input.disabled = true;
@@ -202,6 +215,8 @@ export async function copilotView() {
       thinking.remove();
       history.push({ role: 'assistant', content: `ขออภัยครับ ผมดึงข้อมูลไม่สำเร็จ 😢\n${err.message}`, mood: 'oops' });
       renderLog();
+    } finally {
+      clearInterval(tick);
     }
     sendBtn.disabled = false; input.disabled = false;
     input.focus();
@@ -255,11 +270,17 @@ export async function insightsView() {
       h('button', { class: `chip ${t.key === active ? 'active' : ''}`, style: 'font-family:inherit;font-weight:600',
         title: t.hint,
         onclick: () => { active = t.key; paint(); } }, t.label)));
-    body.replaceChildren(h('div', { class: 'empty-state' }, 'กำลังวิเคราะห์…'));
+    // แท็บสรุปภาพรวมต้องเรียก AI ด้วย จึงช้ากว่าแท็บอื่นที่คำนวณล้วน — บอกให้ชัดว่ารออะไรอยู่
+    const prog = progress('', active === 'brief'
+      ? { steps: ['กำลังรวบรวมตัวเลขจากทุกมุม…', `${NONG} กำลังสรุปว่าควรทำอะไรก่อน…`, 'ใกล้เสร็จแล้ว…'] }
+      : { steps: ['กำลังคำนวณจากข้อมูลจริง…'], hint: 'คำนวณจากฐานข้อมูลโดยตรง ปกติใช้เวลาไม่กี่วินาที' });
+    body.replaceChildren(prog.el);
+    const cur = active;
     TABS.find((t) => t.key === active).render()
-      .then((el) => { if (active === TABS.find((t) => t.key === active).key) body.replaceChildren(el); })
-      .catch((err) => body.replaceChildren(
-        h('div', { class: 'card' }, h('h2', {}, 'วิเคราะห์ไม่สำเร็จ'), h('p', {}, err.message))));
+      .then((el) => { if (active === cur) body.replaceChildren(el); })
+      .catch((err) => { if (active === cur) body.replaceChildren(
+        h('div', { class: 'card' }, h('h2', {}, 'วิเคราะห์ไม่สำเร็จ'), h('p', {}, err.message))); })
+      .finally(() => prog.stop());
   }
 
   // ---------- สรุปภาพรวม ----------

@@ -49,6 +49,35 @@ export const confirmBox = (title, message, okLabel = 'ยืนยัน') =>
 /** ไอคอน ? อธิบายเพิ่ม — ใช้ต่อท้ายหัวข้อหรือป้ายอะไรก็ได้ ไม่ใช่แค่ในฟอร์ม */
 export const tip = (text) => (text ? h('span', { class: 'tip', title: text }, '?') : null);
 
+/**
+ * กล่องสถานะระหว่างรองาน AI — แถบวิ่ง + นับเวลาที่ผ่านไป + บอกว่ากำลังทำอะไรอยู่
+ *
+ * งาน AI ใช้เวลา 15–40 วินาที ถ้าจอนิ่งสนิทผู้ใช้จะนึกว่าระบบค้างแล้วกดซ้ำ
+ * ต้องมีอะไรขยับตลอดและบอกเวลาที่ผ่านไปจริง ไม่ใช่ toast ที่หายไปใน 4 วินาที
+ *
+ * @param {string[]} steps ข้อความไล่ตามเวลา — เปลี่ยนทุก 8 วินาที ให้รู้สึกว่าคืบหน้า
+ * @returns {{el: HTMLElement, stop: () => void}}
+ */
+export function progress(message, { hint = 'ปกติใช้เวลาราว 15–40 วินาที — อย่าเพิ่งปิดหรือกดซ้ำนะครับ', steps = [] } = {}) {
+  const label = h('b', {}, steps[0] ?? message);
+  const time = h('span', { class: 'p-time' }, '0 วินาที');
+  const el = h('div', { class: 'ai-progress' },
+    h('div', { class: 'p-head' }, h('i', { class: 'p-spin' }), label, time),
+    h('div', { class: 'p-bar' }, h('span')),
+    hint ? h('div', { class: 'p-hint' }, hint) : null);
+
+  let n = 0;
+  const timer = setInterval(() => {
+    n += 1;
+    time.textContent = n < 60 ? `${n} วินาที` : `${Math.floor(n / 60)} นาที ${n % 60} วินาที`;
+    if (steps.length) label.textContent = steps[Math.min(Math.floor(n / 8), steps.length - 1)];
+    // เกินเวลาปกติมากแล้ว บอกตรง ๆ ว่าช้ากว่าที่ควร จะได้ตัดสินใจได้
+    if (n === 75) el.querySelector('.p-hint').textContent = 'ใช้เวลานานกว่าปกติ — ยังทำงานอยู่ รออีกสักครู่ ถ้าเกิน 2 นาทีให้ลองใหม่';
+  }, 1000);
+
+  return { el, stop: () => clearInterval(timer) };
+}
+
 export const field = (label, input, hint, tipText) =>
   h('div', { class: 'field' },
     h('label', {}, label, tip(tipText)),

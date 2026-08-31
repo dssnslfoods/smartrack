@@ -1,6 +1,6 @@
 // งานจ่ายออก — ติดตามสถานะ Picked → Packed → Shipped → Delivered + ใบส่งสินค้า + Tracking
-import { api, auth, openLabels } from '../api.js?v=43';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, SHIP_LABEL, SHIP_COLOR } from '../ui.js?v=43';
+import { api, auth, openLabels } from '../api.js?v=44';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, SHIP_LABEL, SHIP_COLOR } from '../ui.js?v=44';
 
 const NEXT = { PICKED: 'PACKED', PACKED: 'SHIPPED', SHIPPED: 'DELIVERED' };
 const NEXT_LABEL = { PICKED: '📦 แพ็คเสร็จ', PACKED: '🚚 ส่งออกแล้ว', SHIPPED: '✅ ถึงปลายทาง' };

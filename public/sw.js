@@ -1,6 +1,6 @@
 // Service Worker — Offline Mode: ค้นหาสินค้า/ดูแผนผังได้แม้เน็ตขัดข้อง
 // เลขเวอร์ชันมีที่เดียวตรงนี้ — ต้องตรงกับ ?v= ใน index.html และ import ของ app.js
-const VERSION = 43;
+const VERSION = 44;
 const SHELL = `rack-shell-v${VERSION}`;
 const DATA = `rack-data-v${VERSION}`;
 // ไฟล์ที่มีเวอร์ชันต่อท้ายต้องแคชด้วย URL ที่มี ?v= ให้ตรงกับที่หน้าเว็บเรียกจริง
