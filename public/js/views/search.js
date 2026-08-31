@@ -1,7 +1,21 @@
 // ค้นหาสินค้า — ตอบคำถามหลัก "สินค้าตัวนี้อยู่ที่ไหน"
 import { api, auth, wh, download } from '../api.js';
-import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill } from '../ui.js?v=30';
+import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill } from '../ui.js?v=33';
 import { itemActions } from '../actions.js';
+
+// ---- สเกลสีตามอายุคงเหลือ — ยิ่งแดงยิ่งต้องรีบระบาย ----
+const EXP_SCALE = [
+  { max: 0, color: '#b91c1c', label: 'หมดอายุแล้ว' },
+  { max: 30, color: '#ea580c', label: 'ไม่ถึง 30 วัน' },
+  { max: 90, color: '#f59e0b', label: '30–90 วัน' },
+  { max: 180, color: '#ca8a04', label: '90–180 วัน' },
+  { max: 365, color: '#65a30d', label: '180 วัน–1 ปี' },
+  { max: Infinity, color: '#15803d', label: 'มากกว่า 1 ปี' },
+];
+const NO_EXP = { color: '#64748b', label: 'ไม่ระบุวันหมดอายุ' };
+const expColor = (days) => (days === null || days === undefined
+  ? NO_EXP.color
+  : (EXP_SCALE.find((s) => days < s.max) ?? EXP_SCALE.at(-1)).color);
 
 async function checkEmptyLocation(q) {
   const code = (q ?? '').trim().toUpperCase();
@@ -82,6 +96,137 @@ export async function searchView({ params }) {
   const summary = h('div', { class: 'muted', style: 'margin:10px 0' });
   const results = h('div', {});
 
+  // ---- สลับมุมมอง: ตาราง / แผนผังชั้นวาง ----
+  let mode = localStorage.getItem('searchView') === 'map' ? 'map' : 'table';
+  let lastRows = [];
+  const tabBtn = h('button', { onclick: () => setMode('table') }, '📋 ตาราง');
+  const mapBtn = h('button', { onclick: () => setMode('map') }, '🗺️ แผนผัง');
+  const viewToggle = h('div', { class: 'view-toggle' }, tabBtn, mapBtn);
+  const syncToggle = () => {
+    tabBtn.classList.toggle('on', mode === 'table');
+    mapBtn.classList.toggle('on', mode === 'map');
+  };
+  function setMode(next) {
+    if (mode === next) return;
+    mode = next;
+    localStorage.setItem('searchView', next);
+    syncToggle();
+    if (lastRows.length) paint();
+  }
+  syncToggle();
+
+  async function paint() {
+    if (mode === 'map') {
+      results.replaceChildren(h('div', { class: 'empty-state' }, 'กำลังวาดแผนผัง…'));
+      results.replaceChildren(await renderMap(lastRows));
+    } else {
+      results.replaceChildren(renderTable(lastRows));
+    }
+  }
+
+  const renderTable = (rows) => table([
+    { label: 'ตำแหน่ง', value: (r) => h('a', { href: `#/map/${r.rag_id}?loc=${r.location_code}` }, r.location_code), mono: true },
+    { label: 'สินค้า', value: (r) => h('div', {},
+        h('div', { style: 'font-weight:600' }, r.sku_name),
+        h('div', { class: 'mono muted', style: 'font-size:12px' }, r.sku_code)) },
+    { label: 'ชั้น / ตอน', value: (r) => `L${r.level} / D${r.depth}` },
+    { label: 'Lot', key: 'lot_no', mono: true },
+    { label: 'จำนวน', value: (r) => `${fmtNum(r.quantity)} ${r.unit}`, num: true },
+    { label: 'วันหมดอายุ', value: (r) => (r.exp_date ? h('div', {}, r.exp_date, ' ', expiryPill(r.expiry)) : '—') },
+    { label: '% อายุ', value: (r) => pctPill(r.pct_remaining) },
+    { label: 'หมายเหตุ', value: (r) => (r.needs_forklift ? pill('ชั้นสูง — ใช้รถยก', 'blue') : null) },
+    { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => detail(r) }, 'รายละเอียด') },
+  ], rows);
+
+  // ---- แผนผังชั้นวาง: วาดทุก RACK ที่พบสินค้า ช่องที่ตรงผลค้นหาจะเน้นสีตามอายุคงเหลือ ----
+  async function renderMap(rows) {
+    const ragIds = [...new Set(rows.map((r) => r.rag_id))];
+    const maps = await Promise.all(ragIds.map((id) =>
+      api.get(`/api/rags/${id}/map`).catch(() => null)));
+
+    const panels = maps.map((data, i) => {
+      const hits = rows.filter((r) => r.rag_id === ragIds[i]);
+      if (!data) return fallbackPanel(hits);
+      return rackPanel(data, hits);
+    });
+
+    const legend = h('div', { class: 'smap-legend' },
+      h('b', { style: 'margin-right:2px' }, 'สีบอกอายุคงเหลือ:'),
+      ...EXP_SCALE.map((s) => h('span', {}, h('i', { style: `background:${s.color}` }), s.label)),
+      h('span', {}, h('i', { style: `background:${NO_EXP.color}` }), NO_EXP.label),
+      h('span', { style: 'color:#94a3b8' }, h('i', { style: 'background:#fff;border:2px solid #e2e8f0' }), 'ช่องอื่นในชั้นวาง (ไม่ตรงผลค้นหา)'));
+
+    return h('div', { class: 'smap' }, ...panels, legend);
+  }
+
+  function rackPanel(data, hits) {
+    const { rag, cells } = data;
+    const hitBy = new Map(hits.map((r) => [r.location_code, r]));
+    const totalQty = hits.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+    const unit = hits[0]?.unit ?? '';
+
+    const byLevel = new Map();
+    for (const c of cells) {
+      if (!byLevel.has(c.level)) byLevel.set(c.level, []);
+      byLevel.get(c.level).push(c);
+    }
+    const levels = [...byLevel.keys()].sort((a, b) => b - a);
+
+    const cellEl = (c) => {
+      const hit = hitBy.get(c.location_code);
+      if (hit) {
+        return h('div', {
+          class: 'smap-cell hit',
+          style: `background:${expColor(hit.days_to_expiry)}`,
+          title: `${hit.location_code} · ${hit.sku_name}\nLot ${hit.lot_no ?? '—'} · ${fmtNum(hit.quantity)} ${hit.unit}\n${hit.exp_date ? `หมดอายุ ${hit.exp_date} (${hit.expiry?.label ?? ''})` : 'ไม่ระบุวันหมดอายุ'}\nคลิกเพื่อดูรายละเอียด`,
+          onclick: () => detail(hit),
+        },
+          h('div', { class: 'lc' }, `L${c.level}/D${c.depth}`),
+          h('div', { class: 'q' }, fmtNum(hit.quantity)),
+          h('div', { class: 'u' }, hit.unit),
+          h('div', { class: 'd' }, hit.exp_date ? (hit.expiry?.label ?? '') : 'ไม่ระบุ EXP'));
+      }
+      const occupied = !!c.item_id;
+      const disabled = c.status === 'DISABLED';
+      return h('div', {
+        class: `smap-cell ${disabled ? 'dis' : occupied ? 'occ' : ''}`,
+        title: `${c.location_code} — ${disabled ? 'ปิดใช้งาน' : occupied ? `มีสินค้าอื่น: ${c.sku_name}` : 'ว่าง'}`,
+      },
+        h('div', { class: 'lc' }, `L${c.level}/D${c.depth}`),
+        h('div', {}, disabled ? '🚫' : occupied ? '▪' : '·'));
+    };
+
+    return h('div', { class: 'smap-rack' },
+      h('div', { class: 'smap-head' },
+        h('h3', {}, `RACK ${rag.zone_code}-${rag.rag_no}`),
+        pill(`พบ ${hits.length} ตำแหน่ง`, 'blue'),
+        pill(`รวม ${fmtNum(totalQty)} ${unit}`, 'green'),
+        h('a', { class: 'sp', href: `#/map/${rag.rag_id}` }, 'เปิดแผนผังเต็ม →')),
+      h('div', { class: 'smap-grid' },
+        h('div', { class: 'smap-dhead' },
+          ...Array.from({ length: rag.total_depths }, (_, i) => h('div', {}, `D${i + 1}`))),
+        ...levels.map((lv) =>
+          h('div', { class: 'smap-row' },
+            h('div', { class: 'lv' }, `L${lv}`),
+            ...byLevel.get(lv).sort((a, b) => a.depth - b.depth).map(cellEl)))));
+  }
+
+  // ถ้าโหลดแผนผังชั้นวางไม่ได้ ยังต้องเห็นว่าเจอของที่ไหนบ้าง
+  function fallbackPanel(hits) {
+    return h('div', { class: 'smap-rack' },
+      h('div', { class: 'smap-head' },
+        h('h3', {}, `RACK ${hits[0]?.zone_code ?? ''}-${hits[0]?.rag_no ?? ''}`),
+        pill('โหลดแผนผังไม่สำเร็จ', 'amber')),
+      h('div', { class: 'smap-row' },
+        ...hits.map((r) => h('div', {
+          class: 'smap-cell hit', style: `background:${expColor(r.days_to_expiry)}`,
+          onclick: () => detail(r),
+        },
+          h('div', { class: 'lc' }, `L${r.level}/D${r.depth}`),
+          h('div', { class: 'q' }, fmtNum(r.quantity)),
+          h('div', { class: 'u' }, r.unit)))));
+  }
+
   async function run() {
     results.replaceChildren(h('div', { class: 'empty-state' }, 'กำลังค้นหา…'));
     const t0 = performance.now();
@@ -93,20 +238,10 @@ export async function searchView({ params }) {
       : `แสดงสินค้า${filtered ? 'ตามตัวกรอง' : 'ทั้งหมดในคลัง'} ${rows.length} รายการ (${ms} ms)`;
 
     if (rows.length) {
-      results.replaceChildren(table([
-        { label: 'ตำแหน่ง', value: (r) => h('a', { href: `#/map/${r.rag_id}?loc=${r.location_code}` }, r.location_code), mono: true },
-        { label: 'สินค้า', value: (r) => h('div', {},
-            h('div', { style: 'font-weight:600' }, r.sku_name),
-            h('div', { class: 'mono muted', style: 'font-size:12px' }, r.sku_code)) },
-        { label: 'ชั้น / ตอน', value: (r) => `L${r.level} / D${r.depth}` },
-        { label: 'Lot', key: 'lot_no', mono: true },
-        { label: 'จำนวน', value: (r) => `${fmtNum(r.quantity)} ${r.unit}`, num: true },
-        { label: 'วันหมดอายุ', value: (r) => (r.exp_date ? h('div', {}, r.exp_date, ' ', expiryPill(r.expiry)) : '—') },
-        { label: '% อายุ', value: (r) => pctPill(r.pct_remaining) },
-        { label: 'หมายเหตุ', value: (r) => (r.needs_forklift ? pill('ชั้นสูง — ใช้รถยก', 'blue') : null) },
-        { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => detail(r) }, 'รายละเอียด') },
-      ], rows));
+      lastRows = rows;
+      await paint();
     } else {
+      lastRows = [];
       // ถ้ากำลังกรองอยู่ การบอกว่า "ตำแหน่งนี้ว่าง" จะทำให้เข้าใจผิด — ข้ามไป
       const locEl = filtered ? null : await checkEmptyLocation(q);
       if (locEl) { summary.textContent = `พบตำแหน่ง "${q}" ในระบบ`; results.replaceChildren(locEl); return; }
@@ -179,5 +314,6 @@ export async function searchView({ params }) {
     h('div', { class: 'card' },
       h('div', { class: 'row scan' }, h('div', { style: 'flex:3' }, input), h('div', { style: 'flex:1' }, zoneSel)),
       filterRow,
-      summary, results));
+      h('div', { style: 'display:flex;align-items:center;gap:12px;flex-wrap:wrap' }, summary, h('div', { style: 'margin-left:auto' }, viewToggle)),
+      results));
 }

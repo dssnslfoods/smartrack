@@ -1,7 +1,7 @@
 // ผู้ช่วย AI + หน้าวิเคราะห์เชิงลึก
 // ตัวเลขทั้งหมดมาจาก /api/insights/* (คำนวณล้วน) ส่วนคำแนะนำมาจาก /api/ai/* (ต้องเปิด AI)
 import { api, auth, wh } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill } from '../ui.js?v=30';
+import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill } from '../ui.js?v=33';
 
 const RISK = {
   EXPIRED: { label: 'หมดอายุแล้ว', color: 'red' },

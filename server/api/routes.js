@@ -52,10 +52,13 @@ export const routes = [
 
   // ---------------- จัดเก็บ / หยิบออก / ย้าย ----------------
   ['POST', '/api/items', 'move', ({ body, user }) => inv.storeItem(body, user)],
-  ['GET', '/api/items/:id', 'view', ({ params }) => ({
-    item: inv.itemDetail(+params.id),
-    history: inv.listMovements({ item_id: +params.id, limit: 50 }),
-  })],
+  ['GET', '/api/items/:id', 'view', async ({ params }) => {
+    const [item, history] = await Promise.all([
+      inv.itemDetail(+params.id),
+      inv.listMovements({ item_id: +params.id, limit: 50 }),
+    ]);
+    return { item, history };
+  }],
   ['POST', '/api/items/:id/remove', 'move', ({ params, body, user }) =>
     inv.removeItem({ ...body, item_id: +params.id }, user)],
   ['POST', '/api/items/:id/move', 'move', ({ params, body, user }) =>

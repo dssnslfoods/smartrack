@@ -1,7 +1,7 @@
 // วางแผนหยิบสินค้า — ระบุสินค้า + จำนวน + เงื่อนไขอายุคงเหลือ
 // ระบบคำนวณให้เองว่าไปหยิบตำแหน่งไหน ตำแหน่งละเท่าไร ตามลำดับ FEFO
 import { api, auth, wh, download } from '../api.js';
-import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal } from '../ui.js?v=30';
+import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal } from '../ui.js?v=33';
 
 export async function pickView() {
   const [skus, zones, channels] = await Promise.all([
