@@ -1,6 +1,6 @@
 // การทำรายการกับสินค้าที่จัดเก็บอยู่ — ใช้ร่วมกันทั้งหน้าค้นหาและหน้าแผนผัง
-import { api, auth } from './api.js?v=42';
-import { h, field, modal, toast, fmtNum } from './ui.js?v=42';
+import { api, auth } from './api.js?v=43';
+import { h, field, modal, toast, fmtNum } from './ui.js?v=43';
 
 /** หยิบสินค้าออกจากตำแหน่ง (ทั้งหมดหรือบางส่วน) */
 export function removeItemDialog(item, onDone) {

@@ -1,6 +1,6 @@
 // ประวัติการเคลื่อนย้าย — immutable log (แก้ไข/ลบไม่ได้)
-import { api, wh, download } from '../api.js?v=42';
-import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=42';
+import { api, wh, download } from '../api.js?v=43';
+import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=43';
 
 export async function historyView() {
   const typeSel = h('select', {}, h('option', { value: '' }, 'ทุกประเภท'),

@@ -221,6 +221,9 @@ tbody tr:hover { background: #f8fafc; }
   .nong-face.bob, .nong-typing i { animation: none; }
 }
 
+/* ปุ่มที่ยังกดไม่ได้เพราะรอข้อมูลอย่างอื่นก่อน — จางลงแต่ยังกดได้ เพื่อให้ขึ้นคำอธิบายว่าต้องทำอะไรก่อน */
+.btn.is-waiting { opacity: .5; }
+
 .view-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .view-toggle button { border: 0; background: #fff; padding: 7px 14px; font-size: 13px; font-weight: 700; color: var(--muted); cursor: pointer; }
 .view-toggle button.on { background: var(--brand); color: #fff; }

@@ -1,6 +1,6 @@
 // นับสต็อก (Cycle Count) — เปิดรอบ → สแกนตำแหน่ง+กรอกจำนวน → เทียบผลต่าง → อนุมัติปรับยอด
-import { api, auth } from '../api.js?v=42';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles } from '../ui.js?v=42';
+import { api, auth } from '../api.js?v=43';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles } from '../ui.js?v=43';
 
 const RSTATUS = { OPEN: ['กำลังนับ', 'blue'], APPROVED: ['อนุมัติแล้ว', 'green'], CANCELLED: ['ยกเลิก', 'gray'] };
 
@@ -146,10 +146,28 @@ async function roundDetail(roundId) {
     } catch (err) { toast(err.message, 'err'); }
   }
 
+  // ปุ่มนับจากรูปต้องรู้ก่อนว่ากำลังนับตำแหน่งไหน จึงจะเทียบกับยอดในระบบได้
+  // ทำให้ปุ่มบอกลำดับด้วยตัวเอง ดีกว่าปล่อยให้กดแล้วค่อยขึ้น error
+  const photoBtn = aiOn ? h('button', { class: 'btn', onclick: countFromPhoto }, '📷 นับจากรูป') : null;
+  function syncPhotoBtn() {
+    if (!photoBtn) return;
+    const ready = Boolean(locInput.value.trim());
+    photoBtn.classList.toggle('is-waiting', !ready);
+    photoBtn.title = ready
+      ? `ถ่ายรูปชั้นวางที่ ${locInput.value.trim().toUpperCase()} ให้ AI ช่วยประมาณจำนวน — ตัวเลขที่ได้จะเติมลงช่อง "นับได้" ให้ตรวจ ต้องกดบันทึกเองเสมอ`
+      : '① ใส่รหัสตำแหน่งในช่องซ้ายก่อน ② แล้วค่อยกดปุ่มนี้เพื่อถ่ายรูปให้ AI ช่วยนับ';
+  }
+  locInput.addEventListener('input', syncPhotoBtn);
+  syncPhotoBtn();
+
   // ---- นับจากรูปถ่าย: AI ช่วยประมาณ แล้วเติมช่องจำนวนให้คนตรวจก่อนบันทึก ----
   async function countFromPhoto() {
     const code = locInput.value.trim().toUpperCase();
-    if (!code) { toast('สแกนหรือพิมพ์รหัสตำแหน่งก่อน แล้วค่อยถ่ายรูป', 'err'); locInput.focus(); return; }
+    if (!code) {
+      toast('ใส่รหัสตำแหน่งก่อนครับ ระบบต้องรู้ว่ากำลังนับช่องไหน จึงจะเทียบกับยอดในระบบได้', 'err');
+      locInput.focus();
+      return;
+    }
     const line = data.lines.find((l) => String(l.location_code).toUpperCase() === code);
 
     let files;
@@ -223,12 +241,16 @@ async function roundDetail(roundId) {
     progressEl,
     isOpen && auth.can('move') ? h('div', { class: 'card' },
       h('h2', {}, '⚡ นับเร็ว'),
+      h('p', { class: 'muted', style: 'margin:2px 0 12px;font-size:13px' },
+        aiOn
+          ? 'สแกนรหัสตำแหน่ง → กรอกจำนวนที่นับได้ → กดบันทึก · หรือกด "นับจากรูป" ให้ AI ช่วยประมาณจำนวนจากรูปถ่ายชั้นวาง'
+          : 'สแกนรหัสตำแหน่ง → กรอกจำนวนที่นับได้ → กดบันทึก'),
       h('div', { class: 'row' },
         h('div', { style: 'flex:2' }, field('ตำแหน่ง', locInput, null, 'ตำแหน่งบนชั้นวางที่ต้องการนับ เช่น FG-A01-L1-D1')),
         h('div', { style: 'flex:1' }, field('นับได้', qtyInput, null, 'จำนวนสินค้าจริงที่นับได้ ณ ตำแหน่งนั้น')),
         h('div', { style: 'flex:2' }, field('หมายเหตุ', noteInput, null, 'บันทึกเหตุผลหากนับได้ไม่ตรง เช่น สินค้าชำรุด แตกหัก')),
         h('div', { style: 'flex:0;align-self:flex-end;display:flex;gap:6px' },
-          aiOn ? h('button', { class: 'btn', title: 'ถ่ายรูปชั้นวางให้ AI ช่วยประมาณจำนวน — ต้องตรวจตัวเลขและกดบันทึกเองเสมอ AI บันทึกข้อมูลแทนไม่ได้', onclick: countFromPhoto }, '📷 นับจากรูป') : null,
+          photoBtn,
           h('button', { class: 'btn primary', title: 'บันทึกจำนวนที่นับได้ของตำแหน่งนี้ แล้วเทียบผลต่างกับยอดในระบบทันที (ยอดสต๊อกจะยังไม่เปลี่ยนจนกว่าจะอนุมัติรอบ)', onclick: submitCount }, 'บันทึก')))) : null,
     h('div', { class: 'card' },
       h('div', { class: 'card-head' },
