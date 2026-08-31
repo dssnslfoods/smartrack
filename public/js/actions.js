@@ -1,6 +1,6 @@
 // การทำรายการกับสินค้าที่จัดเก็บอยู่ — ใช้ร่วมกันทั้งหน้าค้นหาและหน้าแผนผัง
-import { api, auth } from './api.js';
-import { h, field, modal, toast, fmtNum } from './ui.js?v=38';
+import { api, auth } from './api.js?v=42';
+import { h, field, modal, toast, fmtNum } from './ui.js?v=42';
 
 /** หยิบสินค้าออกจากตำแหน่ง (ทั้งหมดหรือบางส่วน) */
 export function removeItemDialog(item, onDone) {
@@ -14,7 +14,7 @@ export function removeItemDialog(item, onDone) {
       field('หมายเหตุ', note)),
     [
       h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-      h('button', { class: 'btn primary', onclick: async () => {
+      h('button', { class: 'btn primary', title: 'ตัดสต๊อกออกตามจำนวนที่ระบุและบันทึกลงประวัติ — ถ้าหยิบครบทั้งหมด ตำแหน่งนี้จะกลับเป็นช่องว่างทันที', onclick: async () => {
         try {
           const r = await api.post(`/api/items/${item.item_id}/remove`, { quantity: Number(qty.value), note: note.value.trim() });
           toast(r.remaining ? `หยิบออก ${fmtNum(r.removed)} ${item.unit} · เหลือ ${fmtNum(r.remaining)}` : `หยิบสินค้าออกจาก ${item.location_code} แล้ว`);
@@ -56,7 +56,7 @@ export async function moveItemDialog(item, onDone) {
       list),
     [
       h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-      h('button', { class: 'btn primary', onclick: submit }, 'ยืนยันการย้าย'),
+      h('button', { class: 'btn primary', title: 'ย้ายพาเลทนี้ไปยังตำแหน่งปลายทางที่ระบุ — ตำแหน่งเดิมจะว่างลง และปลายทางต้องเป็นช่องว่างเท่านั้น', onclick: submit }, 'ยืนยันการย้าย'),
     ]);
 }
 
@@ -76,7 +76,7 @@ export function editItemDialog(item, onDone) {
       field('หมายเหตุ', note)),
     [
       h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-      h('button', { class: 'btn primary', onclick: async () => {
+      h('button', { class: 'btn primary', title: 'บันทึกจำนวน/Lot/วันที่ที่แก้ไข — การแก้ไขจะถูกเก็บในประวัติและลบไม่ได้ ต้องแก้ด้วยรายการย้อนกลับเท่านั้น', onclick: async () => {
         try {
           await api.put(`/api/items/${item.item_id}`, {
             quantity: Number(qty.value), lot_no: lot.value.trim(), mfg_date: mfg.value, exp_date: exp.value, note: note.value.trim(),
@@ -91,8 +91,8 @@ export function editItemDialog(item, onDone) {
 export const itemActions = (item, onDone) =>
   auth.can('move')
     ? [
-        h('button', { class: 'btn', onclick: () => editItemDialog(item, onDone) }, '✏️ แก้ไข'),
-        h('button', { class: 'btn', onclick: () => moveItemDialog(item, onDone) }, '🔄 ย้าย'),
-        h('button', { class: 'btn primary', onclick: () => removeItemDialog(item, onDone) }, '📤 หยิบออก'),
+        h('button', { class: 'btn', title: 'แก้จำนวน Lot วันผลิต/วันหมดอายุ ของสินค้าที่วางอยู่ตำแหน่งนี้ ใช้เมื่อคีย์ผิดหรือข้อมูลไม่ตรงกับฉลาก — ทุกการแก้ถูกบันทึกในประวัติ', onclick: () => editItemDialog(item, onDone) }, '✏️ แก้ไข'),
+        h('button', { class: 'btn', title: 'ย้ายพาเลทนี้ไปตำแหน่งว่างอื่น เช่น ย้ายออกเพื่อเข้าถึงของที่อยู่ลึกกว่า (D2 ขึ้นไป) — จำนวนคงเดิม เปลี่ยนแค่ตำแหน่ง', onclick: () => moveItemDialog(item, onDone) }, '🔄 ย้าย'),
+        h('button', { class: 'btn primary', title: 'เบิก/จ่ายสินค้าออกจากตำแหน่งนี้ ระบุได้ทั้งบางส่วนหรือทั้งหมด — สต๊อกจะลดลงทันทีและบันทึกลงประวัติ', onclick: () => removeItemDialog(item, onDone) }, '📤 หยิบออก'),
       ]
     : [];

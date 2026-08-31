@@ -1,6 +1,6 @@
 // เอกสารคลัง — โอนย้าย / รับคืนลูกค้า / ส่งคืนผู้ขาย / ตัดเสีย + ประวัติเอกสารทั้งหมด
-import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, DOC_COLOR, locationPickerModal } from '../ui.js?v=38';
+import { api, auth } from '../api.js?v=42';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, DOC_COLOR, locationPickerModal } from '../ui.js?v=42';
 
 // ---------- ตัวช่วย: สแกน/พิมพ์รหัสตำแหน่งเพื่อดึงรายการสินค้าในตำแหน่งนั้น ----------
 function itemPicker(onAdd) {
@@ -45,7 +45,7 @@ export async function docsView() {
       { label: 'รายการ', key: 'line_count', num: true },
       { label: 'จำนวนรวม', value: (r) => fmtNum(r.total_qty), num: true },
       { label: 'ผู้บันทึก', key: 'created_by_name' },
-      { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => showDoc(r.doc_id) }, 'ดู') },
+      { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'เปิดดูรายละเอียดทุกบรรทัดของเอกสารนี้ — สินค้า Lot จำนวน และตำแหน่งต้นทาง/ปลายทาง', onclick: () => showDoc(r.doc_id) }, 'ดู') },
     ], rows, { empty: 'ยังไม่มีเอกสาร' }));
   }
 
@@ -79,6 +79,7 @@ export async function docsView() {
       const to = h('input', { placeholder: 'ตำแหน่งปลายทาง', autocomplete: 'off', style: 'width:130px' });
       const toPick = h('button', {
         class: 'btn ghost', type: 'button', style: 'padding:4px 8px;font-size:12px;white-space:nowrap',
+        title: 'เปิดผังคลังเพื่อเลือกตำแหน่งปลายทางจากช่องที่ว่างจริง — แทนการพิมพ์รหัสเอง',
         onclick: () => locationPickerModal((url, params) => api.get(url, params), (code) => { to.value = code; }),
       }, '🗺️');
       items.push({ item, to, toPick });
@@ -91,7 +92,7 @@ export async function docsView() {
             h('div', { style: 'font-weight:600' }, x.item.sku_name),
             h('div', { class: 'mono muted', style: 'font-size:12px' }, `${x.item.location_code} · Lot ${x.item.lot_no ?? '-'} · ${fmtNum(x.item.quantity)} ${x.item.unit}`)),
           h('div', {}, '→'), x.to, x.toPick,
-          h('button', { class: 'btn ghost', onclick: () => { items.splice(items.indexOf(x), 1); render(); } }, '🗑️'))));
+          h('button', { class: 'btn ghost', title: 'เอาบรรทัดนี้ออกจากใบโอน — สินค้ายังอยู่ที่ตำแหน่งเดิม ไม่กระทบสต๊อกจริง', onclick: () => { items.splice(items.indexOf(x), 1); render(); } }, '🗑️'))));
     }
     const m = modal('สร้างใบโอนย้าย',
       h('div', {},
@@ -100,7 +101,7 @@ export async function docsView() {
         field('หมายเหตุ', note, null, 'รายละเอียดเพิ่มเติมเกี่ยวกับการโอนย้ายครั้งนี้')),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'ยืนยันย้ายสินค้าทุกบรรทัดที่ระบุตำแหน่งปลายทางแล้ว — สต๊อกจะเปลี่ยนตำแหน่งทันทีและออกเลขเอกสารบันทึกลงประวัติ (แก้ไขภายหลังต้องทำรายการย้อนกลับ)', onclick: async () => {
           const lines = items
             .filter((x) => x.to.value.trim())
             .map((x) => ({ item_id: x.item.item_id, to_location_code: x.to.value.trim().toUpperCase() }));
@@ -130,6 +131,7 @@ export async function docsView() {
       const loc = h('input', { placeholder: 'ตำแหน่งเก็บ', style: 'width:120px' });
       const locPick = h('button', {
         class: 'btn ghost', type: 'button', style: 'padding:4px 8px;font-size:12px;white-space:nowrap',
+        title: 'เปิดผังคลังเพื่อเลือกตำแหน่งว่างที่จะเก็บสินค้าคืน — แทนการพิมพ์รหัสเอง',
         onclick: () => locationPickerModal((url, params) => api.get(url, params), (code) => { loc.value = code; }),
       }, '🗺️');
       const line = { sel, qty, lot, exp, loc };
@@ -144,11 +146,11 @@ export async function docsView() {
         h('div', { class: 'grid g2' }, field('ลูกค้า', party, null, 'ชื่อลูกค้าที่ส่งสินค้าคืนกลับมา'), field('อ้างอิง', refNo, null, 'เลขที่เอกสารอ้างอิง เช่น เลขที่ใบส่งของเดิม')),
         field('เหตุผลการคืน *', reason, null, 'เหตุผลของการคืนสินค้า เช่น สินค้าเสียหาย ส่งผิดรุ่น'),
         linesBox,
-        h('button', { class: 'btn', onclick: addLine }, '+ เพิ่มบรรทัด'),
+        h('button', { class: 'btn', title: 'เพิ่มช่องกรอกอีก 1 บรรทัด สำหรับสินค้าคนละรายการหรือคนละ Lot ในใบคืนใบเดียวกัน', onclick: addLine }, '+ เพิ่มบรรทัด'),
         field('หมายเหตุ', note, null, 'รายละเอียดเพิ่มเติม')),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'ยืนยันรับสินค้ากลับเข้าคลัง — สต๊อกจะเพิ่มขึ้นที่ตำแหน่งที่ระบุทันที ต้องกรอกเหตุผลการคืนก่อน', onclick: async () => {
           const items = lines.filter((l) => l.sel.value && l.loc.value.trim()).map((l) => ({
             sku_id: Number(l.sel.value), quantity: Number(l.qty.value),
             lot_no: l.lot.value.trim() || null, exp_date: l.exp.value || null,
@@ -186,7 +188,7 @@ export async function docsView() {
             h('div', { style: 'font-weight:600' }, x.item.sku_name),
             h('div', { class: 'mono muted', style: 'font-size:12px' }, `${x.item.location_code} · Lot ${x.item.lot_no ?? '-'} · มี ${fmtNum(x.item.quantity)} ${x.item.unit}`)),
           x.qty,
-          h('button', { class: 'btn ghost', onclick: () => { items.splice(items.indexOf(x), 1); render(); } }, '🗑️'))));
+          h('button', { class: 'btn ghost', title: 'เอาบรรทัดนี้ออกจากเอกสาร — สินค้ายังอยู่ในคลังตามเดิม ไม่กระทบสต๊อกจริง', onclick: () => { items.splice(items.indexOf(x), 1); render(); } }, '🗑️'))));
     }
     const m = modal(isScrap ? 'ตัดของเสีย (Scrap)' : 'ส่งคืนผู้ขาย (Supplier Return)',
       h('div', {},
@@ -196,7 +198,7 @@ export async function docsView() {
         listEl),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: isScrap ? 'ยืนยันตัดของเสียออกจากคลัง — สต๊อกจะถูกหักตามจำนวนที่ระบุทันทีและลบไม่ได้ ต้องระบุเหตุผลกำกับเสมอ' : 'ยืนยันส่งสินค้าคืนผู้ขาย — สต๊อกจะถูกตัดออกจากตำแหน่งที่เลือกทันทีและบันทึกลงประวัติแบบลบไม่ได้', onclick: async () => {
           const lines = items.map((x) => ({ item_id: x.item_id, quantity: Number(x.qty.value) }));
           if (!lines.length) { toast('เพิ่มรายการอย่างน้อย 1 บรรทัด', 'err'); return; }
           try {
@@ -215,10 +217,10 @@ export async function docsView() {
       h('div', {}, h('h1', {}, 'เอกสารคลัง'),
         h('p', {}, 'โอนย้าย · รับคืนลูกค้า · ส่งคืนผู้ขาย · ตัดเสีย — ทุกเอกสารผูกกับประวัติสินค้าตรวจย้อนได้')),
       auth.can('move') ? h('div', { class: 'actions' },
-        h('button', { class: 'btn', onclick: transferForm }, '🔄 โอนย้าย'),
-        h('button', { class: 'btn', onclick: returnInForm }, '↩️ รับคืนลูกค้า'),
-        h('button', { class: 'btn', onclick: () => outForm('return-out') }, '📦 ส่งคืนผู้ขาย'),
-        h('button', { class: 'btn danger', onclick: () => outForm('scrap') }, '🗑️ ตัดเสีย')) : null),
+        h('button', { class: 'btn', title: 'สร้างใบโอนย้ายสินค้าระหว่างตำแหน่งในคลัง — จำนวนรวมไม่เปลี่ยน เปลี่ยนแค่ตำแหน่งจัดเก็บ', onclick: transferForm }, '🔄 โอนย้าย'),
+        h('button', { class: 'btn', title: 'บันทึกสินค้าที่ลูกค้าส่งกลับเข้าคลัง — ต้องระบุ Lot วันหมดอายุ และตำแหน่งที่จะเก็บคืน', onclick: returnInForm }, '↩️ รับคืนลูกค้า'),
+        h('button', { class: 'btn', title: 'สร้างใบส่งสินค้ากลับไปยังผู้ขาย — สินค้าจะถูกตัดออกจากคลังตามจำนวนที่เลือก', onclick: () => outForm('return-out') }, '📦 ส่งคืนผู้ขาย'),
+        h('button', { class: 'btn danger', title: 'ตัดสินค้าเสีย/หมดอายุออกจากสต๊อกถาวร — ใช้เมื่อของใช้ไม่ได้แล้ว ต้องระบุเหตุผลและแก้ไขภายหลังไม่ได้', onclick: () => outForm('scrap') }, '🗑️ ตัดเสีย')) : null),
     h('div', { class: 'card' },
       h('div', { class: 'row scan' }, h('div', { style: 'flex:3' }, q), h('div', { style: 'flex:1' }, typeSel)),
       listBox));

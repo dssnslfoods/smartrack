@@ -1,6 +1,6 @@
 // รับสินค้าเข้าคลัง (GRN) — หลายรายการ/หลาย Lot ต่อใบ + QC + อ้างอิงเลข PO
-import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles } from '../ui.js?v=38';
+import { api, auth } from '../api.js?v=42';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles } from '../ui.js?v=42';
 
 export async function inboundView() {
   const [skus, zones, aiStatus] = await Promise.all([
@@ -86,7 +86,7 @@ export async function inboundView() {
         field('จำนวน *', qty, null, 'จำนวนสินค้าที่รับเข้าจริง (นับเป็นหน่วยฐาน)'), field('หน่วย', unitSel, null, 'หน่วยนับที่ใช้รับเข้า เช่น หน่วยฐานหรือหน่วยแปลง (กล่อง/ลัง)'), field('Lot', lot, null, 'รหัสรอบการผลิต (Batch Number) ดูจากฉลากสินค้า'),
         field('วันผลิต (MFG)', mfg, null, 'วันที่ผลิตสินค้า (Manufacturing Date) ดูจากฉลาก'), field('วันหมดอายุ (EXP)', exp, null, 'วันที่สินค้าหมดอายุ (Expiry Date) ดูจากฉลาก'),
         h('div', { style: 'flex:0;align-self:flex-end' },
-          h('button', { class: 'btn ghost', onclick: () => { lines.splice(lines.indexOf(line), 1); row.remove(); } }, '🗑️'))),
+          h('button', { class: 'btn ghost', title: 'ลบบรรทัดสินค้านี้ออกจากใบรับเข้า (ยังไม่บันทึก จึงไม่กระทบสต๊อก)', onclick: () => { lines.splice(lines.indexOf(line), 1); row.remove(); } }, '🗑️'))),
       sugg);
     line.row = row;
     lines.push(line);
@@ -164,7 +164,7 @@ export async function inboundView() {
       { label: 'รายการ', key: 'line_count', num: true },
       { label: 'จำนวนรวม', value: (r) => fmtNum(r.total_qty), num: true },
       { label: 'ผู้บันทึก', key: 'created_by_name' },
-      { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => showDoc(r.doc_id) }, 'ดู') },
+      { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'เปิดดูรายละเอียดใบรับเข้าใบนี้ — รายการสินค้า Lot จำนวน และตำแหน่งที่จัดเก็บเข้าไป', onclick: () => showDoc(r.doc_id) }, 'ดู') },
     ], rows, { empty: 'ยังไม่มีใบรับเข้า' }));
   }
 
@@ -227,8 +227,8 @@ export async function inboundView() {
             h('p', { class: 'muted', style: 'margin:2px 0 0;font-size:13.5px' },
               'ถ่ายรูปหรือแนบไฟล์ใบส่งของ/PO แล้ว AI จะอ่านรายการมาเติมให้ — ตรวจก่อนบันทึกเสมอ')),
           h('div', { class: 'actions' },
-            h('button', { class: 'btn', onclick: () => scanDoc('environment') }, '📷 ถ่ายรูป'),
-            h('button', { class: 'btn primary', onclick: () => scanDoc(null) }, '📎 แนบไฟล์'))),
+            h('button', { class: 'btn', title: 'เปิดกล้องถ่ายรูปใบส่งของ/PO ให้ AI อ่านรายการมาเติมฟอร์มให้ — ระบบยังไม่บันทึก ต้องตรวจทุกบรรทัดก่อนกดบันทึกเสมอ', onclick: () => scanDoc('environment') }, '📷 ถ่ายรูป'),
+            h('button', { class: 'btn primary', title: 'แนบไฟล์รูปหรือ PDF ของใบส่งของ/PO ให้ AI อ่านรายการมาเติมฟอร์มให้ (แนบได้หลายไฟล์) — ต้องตรวจก่อนบันทึกเสมอ', onclick: () => scanDoc(null) }, '📎 แนบไฟล์'))),
         scanStatus) : null,
       h('div', { class: 'card' },
         h('h2', {}, '1. ข้อมูลเอกสาร'),
@@ -238,10 +238,10 @@ export async function inboundView() {
       h('div', { class: 'card' },
         h('div', { class: 'card-head' },
           h('h2', {}, '2. รายการสินค้า'),
-          h('button', { class: 'btn', onclick: addLine }, '+ เพิ่มบรรทัด')),
+          h('button', { class: 'btn', title: 'เพิ่มบรรทัดสินค้าอีก 1 รายการในใบรับเข้าใบนี้ — ใช้เมื่อรับหลายสินค้าหรือหลาย Lot ในการส่งของครั้งเดียว', onclick: addLine }, '+ เพิ่มบรรทัด')),
         linesBox),
       h('div', { style: 'margin:14px 0;text-align:right' },
-        h('button', { class: 'btn primary', style: 'padding:12px 32px;font-size:16px', onclick: submit }, '📥 บันทึกใบรับเข้า'))) : null,
+        h('button', { class: 'btn primary', style: 'padding:12px 32px;font-size:16px', title: 'ออกเลขที่ใบรับเข้าและนำสินค้าทุกบรรทัดเข้าตำแหน่งที่ระบุ — สต๊อกเพิ่มทันทีและบันทึกลงประวัติซึ่งลบไม่ได้ ตรวจให้ครบก่อนกด', onclick: submit }, '📥 บันทึกใบรับเข้า'))) : null,
     h('div', { class: 'card' },
       h('h2', {}, 'ใบรับเข้าล่าสุด'),
       recent));

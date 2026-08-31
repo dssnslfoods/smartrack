@@ -1,6 +1,6 @@
 // จัดเก็บสินค้าเข้าตำแหน่งว่าง
-import { api } from '../api.js';
-import { h, field, toast, scanInput, fmtNum } from '../ui.js?v=38';
+import { api } from '../api.js?v=42';
+import { h, field, toast, scanInput, fmtNum } from '../ui.js?v=42';
 
 export async function storeView() {
   const [skus, zones] = await Promise.all([api.get('/api/skus'), api.get('/api/zones')]);
@@ -65,7 +65,7 @@ export async function storeView() {
           h('h3', {}, 'จัดเก็บสำเร็จ'),
           h('p', {}, `${item.sku_name} จำนวน ${fmtNum(item.quantity)} ${item.unit}`),
           h('p', {}, `ตำแหน่ง `, h('a', { href: `#/map/${item.rag_id}?loc=${item.location_code}` }, item.location_code)),
-          h('button', { class: 'btn primary', onclick: reset }, 'จัดเก็บรายการถัดไป')));
+          h('button', { class: 'btn primary', title: 'ล้างฟอร์มทั้งหมดเพื่อกรอกสินค้ารายการใหม่ — รายการที่เพิ่งจัดเก็บถูกบันทึกไว้แล้ว', onclick: reset }, 'จัดเก็บรายการถัดไป')));
       locInput.value = '';
       loadEmpties();
     } catch (err) { toast(err.message, 'err'); }
@@ -103,5 +103,5 @@ export async function storeView() {
         h('div', { style: 'flex:1' }, zoneSel)),
       pickList),
     h('div', { style: 'margin-top:16px;text-align:right' },
-      h('button', { class: 'btn primary', style: 'padding:12px 32px;font-size:16px', onclick: submit }, '📥 จัดเก็บสินค้า')));
+      h('button', { class: 'btn primary', style: 'padding:12px 32px;font-size:16px', title: 'บันทึกสินค้าเข้าตำแหน่งที่เลือก — ตำแหน่งจะเปลี่ยนเป็น "มีสินค้า" และบันทึกเป็นประวัติที่ลบไม่ได้', onclick: submit }, '📥 จัดเก็บสินค้า')));
 }

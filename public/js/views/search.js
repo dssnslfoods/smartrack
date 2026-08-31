@@ -1,7 +1,7 @@
 // ค้นหาสินค้า — ตอบคำถามหลัก "สินค้าตัวนี้อยู่ที่ไหน"
-import { api, auth, wh, download } from '../api.js';
-import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill, PTYPE_LABEL } from '../ui.js?v=38';
-import { itemActions } from '../actions.js';
+import { api, auth, wh, download } from '../api.js?v=42';
+import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill, PTYPE_LABEL } from '../ui.js?v=42';
+import { itemActions } from '../actions.js?v=42';
 
 // ---- สเกลสีตามอายุคงเหลือ — ยิ่งแดงยิ่งต้องรีบระบาย ----
 const EXP_SCALE = [
@@ -33,7 +33,7 @@ async function checkEmptyLocation(q) {
           h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'ชั้นวาง'), h('div', { style: 'font-weight:600' }, loc.rag_no)),
           h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'โซน'), h('div', { style: 'font-weight:600' }, `${loc.zone_code} — ${loc.zone_name}`)),
           h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'ชั้น / ตอน'), h('div', { style: 'font-weight:600' }, `L${loc.level} / D${loc.depth}`))),
-        h('a', { class: 'btn primary', href: `#/map/${loc.rag_id}?loc=${loc.location_code}` }, '🗺️ ดูบนแผนผัง')),
+        h('a', { class: 'btn primary', title: 'เปิดแผนผังชั้นวางแล้วเน้นช่องนี้ให้ — ใช้ดูว่าตำแหน่งอยู่ชั้นไหน ตอนไหน และรอบ ๆ มีของอะไรอยู่', href: `#/map/${loc.rag_id}?loc=${loc.location_code}` }, '🗺️ ดูบนแผนผัง')),
     ];
     if (data.history && data.history.length) {
       parts.push(h('div', { class: 'card', style: 'margin-top:14px' },
@@ -139,6 +139,7 @@ export async function searchView({ params }) {
 
   const clearFilters = h('button', {
     class: 'btn ghost',
+    title: 'ล้างเงื่อนไขกรองทุกช่องกลับเป็นค่าเริ่มต้น (เรียงแบบ FEFO) แล้วค้นใหม่ — คำค้นในช่องบนสุดยังอยู่เหมือนเดิม',
     onclick: () => {
       [...selects.filter((el) => el !== sortSel), ...inputs].forEach((el) => { el.value = ''; });
       sortSel.value = 'fefo';
@@ -219,8 +220,8 @@ export async function searchView({ params }) {
   // ---- สลับมุมมอง: ตาราง / แผนผังชั้นวาง ----
   let mode = localStorage.getItem('searchView') === 'map' ? 'map' : 'table';
   let lastRows = [];
-  const tabBtn = h('button', { onclick: () => setMode('table') }, '📋 ตาราง');
-  const mapBtn = h('button', { onclick: () => setMode('map') }, '🗺️ แผนผัง');
+  const tabBtn = h('button', { title: 'แสดงผลค้นหาเป็นตาราง — เห็น Lot วันหมดอายุ และจำนวนครบทุกคอลัมน์', onclick: () => setMode('table') }, '📋 ตาราง');
+  const mapBtn = h('button', { title: 'แสดงผลค้นหาเป็นแผนผังชั้นวาง — เห็นว่าของวางอยู่ช่องไหนจริง ๆ สีบอกอายุคงเหลือ', onclick: () => setMode('map') }, '🗺️ แผนผัง');
   const viewToggle = h('div', { class: 'view-toggle' }, tabBtn, mapBtn);
   const syncToggle = () => {
     tabBtn.classList.toggle('on', mode === 'table');
@@ -255,7 +256,7 @@ export async function searchView({ params }) {
     { label: 'วันหมดอายุ', value: (r) => (r.exp_date ? h('div', {}, r.exp_date, ' ', expiryPill(r.expiry)) : '—') },
     { label: '% อายุ', value: (r) => pctPill(r.pct_remaining) },
     { label: 'หมายเหตุ', value: (r) => (r.needs_forklift ? pill('ชั้นสูง — ใช้รถยก', 'blue') : null) },
-    { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => detail(r) }, 'รายละเอียด') },
+    { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'ดูข้อมูลเต็มของรายการนี้ พร้อมประวัติการจัดเก็บ/หยิบ/ย้าย และปุ่มสั่งย้ายหรือหยิบออก', onclick: () => detail(r) }, 'รายละเอียด') },
   ], rows);
 
   // ---- แผนผังชั้นวาง: วาดทุก RACK ที่พบสินค้า ช่องที่ตรงผลค้นหาจะเน้นสีตามอายุคงเหลือ ----
@@ -296,7 +297,7 @@ export async function searchView({ params }) {
           pill(`${s.locs} ตำแหน่ง`, 'blue'),
           pill(`รวม ${fmtNum(s.qty)} ${s.unit}`, 'green'))),
       h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
-        h('button', { class: 'btn', onclick: () => showFloorOverview(rows) }, '🏭 ดูภาพรวมทั้งคลัง — สินค้านี้อยู่ชั้นวางไหนบ้าง')));
+        h('button', { class: 'btn', title: 'เปิดผังพื้นคลังทั้งคลัง โดยเน้นสีเฉพาะชั้นวางที่มีสินค้าตัวนี้ — ใช้ดูว่าของกระจายอยู่กี่จุดก่อนเดินไปหยิบ', onclick: () => showFloorOverview(rows) }, '🏭 ดูภาพรวมทั้งคลัง — สินค้านี้อยู่ชั้นวางไหนบ้าง')));
   }
 
   // ---- ผังพื้นคลังทั้งคลัง เน้นชั้นวางที่มีสินค้าตัวนี้ — เปิดเป็นหน้าต่างซ้อน ไม่ต้องออกจากหน้าค้นหา ----
@@ -433,6 +434,7 @@ export async function searchView({ params }) {
         pill(`รวม ${fmtNum(totalQty)} ${unit}`, 'green'),
         h('button', {
           class: 'btn ghost sp', style: 'font-size:12px;padding:4px 10px',
+          title: 'เปิดผังพื้นคลังแล้วชี้ตำแหน่งของชั้นวางนี้ — ใช้ดูว่าต้องเดินไปทางไหนในคลัง',
           onclick: () => showFloorOverview(lastRows, rag.rag_id),
         }, '🏭 ดูในผังคลัง')),
       h('div', { class: 'smap-grid' },
@@ -537,7 +539,7 @@ export async function searchView({ params }) {
           { label: 'หมายเหตุ', key: 'note' },
         ], history)),
       [
-        h('a', { class: 'btn', href: `#/map/${item.rag_id}?loc=${item.location_code}` }, '🗺️ ดูบนแผนผัง'),
+        h('a', { class: 'btn', title: 'เปิดแผนผังชั้นวางแล้วเน้นช่องที่เก็บรายการนี้ — ใช้ตอนจะเดินไปหยิบของจริง', href: `#/map/${item.rag_id}?loc=${item.location_code}` }, '🗺️ ดูบนแผนผัง'),
         ...itemActions(item, () => { m.close(); run(); }),
       ]);
   }
@@ -548,8 +550,8 @@ export async function searchView({ params }) {
       h('div', {}, h('h1', {}, 'ค้นหาสินค้าในคลัง'),
         h('p', {}, `คลัง: ${wh.label} — ค้นหาว่าสินค้าอยู่ชั้นวางไหน ชั้นใด ตอนที่เท่าไร`)),
       h('div', { class: 'actions' },
-        h('a', { class: 'btn', href: '#/pick' }, '📤 วางแผนหยิบสินค้า'),
-        h('button', { class: 'btn', onclick: () => download('/api/export/stock.csv', query()) }, '⬇️ ดาวน์โหลด Excel (CSV)'))),
+        h('a', { class: 'btn', title: 'ไปหน้าวางแผนหยิบสินค้า — ระบุจำนวนที่ต้องการแล้วระบบจัดคิวหยิบตามลำดับ FEFO ให้', href: '#/pick' }, '📤 วางแผนหยิบสินค้า'),
+        h('button', { class: 'btn', title: 'บันทึกผลค้นหาตามตัวกรองปัจจุบันเป็นไฟล์ CSV เปิดใน Excel ได้ — ไม่กระทบข้อมูลในระบบ', onclick: () => download('/api/export/stock.csv', query()) }, '⬇️ ดาวน์โหลด Excel (CSV)'))),
     h('div', { class: 'card' },
       h('div', { class: 'row scan' }, h('div', { style: 'flex:3' }, input), h('div', { style: 'flex:1' }, zoneSel)),
       filterRow,

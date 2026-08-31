@@ -1,7 +1,7 @@
 // วางแผนหยิบสินค้า — ระบุสินค้า + จำนวน + เงื่อนไขอายุคงเหลือ
 // ระบบคำนวณให้เองว่าไปหยิบตำแหน่งไหน ตำแหน่งละเท่าไร ตามลำดับ FEFO
-import { api, auth, wh, download } from '../api.js';
-import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal } from '../ui.js?v=38';
+import { api, auth, wh, download } from '../api.js?v=42';
+import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal } from '../ui.js?v=42';
 
 export async function pickView() {
   const [skus, zones, channels] = await Promise.all([
@@ -30,6 +30,7 @@ export async function pickView() {
     skuList.replaceChildren(...rows.map((s) =>
       h('button', {
         class: `sku-option ${sku?.sku_id === s.sku_id ? 'active' : ''}`,
+        title: `เลือก ${s.sku_name} เป็นสินค้าที่จะวางแผนหยิบ แล้วไปกรอกจำนวนที่ต้องการต่อ`,
         onclick: () => { sku = s; renderSkus(); qty.focus(); },
       },
         h('div', {},
@@ -144,10 +145,10 @@ export async function pickView() {
         h('div', { class: 'card-head' },
           h('h2', {}, `ใบสั่งหยิบ — ${plan.sku.sku_name}`),
           h('div', { class: 'actions' },
-            h('button', { class: 'btn', onclick: () => download('/api/export/picklist.csv', params()) }, '⬇️ CSV'),
-            h('button', { class: 'btn', onclick: printPickup }, '🖨️ พิมพ์'),
+            h('button', { class: 'btn', title: 'ดาวน์โหลดแผนหยิบเป็นไฟล์ CSV ไว้เปิดใน Excel หรือส่งต่อให้ทีมอื่น', onclick: () => download('/api/export/picklist.csv', params()) }, '⬇️ CSV'),
+            h('button', { class: 'btn', title: 'พิมพ์ใบเบิกสินค้าตามแผนนี้ ให้พนักงานถือเข้าไปหยิบของในคลังและลงนามกำกับ', onclick: printPickup }, '🖨️ พิมพ์'),
             plan.lines.length && auth.can('move')
-              ? h('button', { class: 'btn primary', onclick: confirmPick }, '✅ ยืนยันหยิบตามแผน')
+              ? h('button', { class: 'btn primary', title: 'ยืนยันว่าหยิบจริงแล้ว — ระบบจะตัดสต๊อกตามแผนนี้และเปิดใบจ่ายสินค้าให้ติดตามการส่งต่อ', onclick: confirmPick }, '✅ ยืนยันหยิบตามแผน')
               : null)),
         list),
       skipped);
@@ -183,7 +184,7 @@ export async function pickView() {
         field('ช่องทางขาย', chSel, 'ระบบจะตรวจ % อายุคงเหลือขั้นต่ำของช่องทางให้อัตโนมัติ', 'ช่องทางขายที่สั่งสินค้า เช่น MT, GT, Online — แต่ละช่องทางมีเกณฑ์อายุขั้นต่ำต่างกัน')),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'ตัดสต๊อกออกจากทุกตำแหน่งในแผน และเปิดใบจ่ายสินค้า — ย้อนกลับไม่ได้ ต้องแก้ด้วยรายการรับคืนเท่านั้น', onclick: async () => {
           try { await doIssue(false); } catch (err) {
             if (err.code === 'CHANNEL_PCT') {
               const ok = await confirmBox('อายุคงเหลือต่ำกว่าเกณฑ์ช่องทาง',
@@ -311,7 +312,7 @@ export async function pickView() {
         field('เฉพาะโซน', zoneSel, null, 'กรองเฉพาะโซนที่ต้องการ เช่น FG, RM — เว้นว่างคือค้นทุกโซน'),
         field('ลำดับการหยิบ', strategy, null, 'FEFO = หมดอายุก่อนหยิบก่อน, FIFO = เข้าคลังก่อนหยิบก่อน')),
       h('div', { style: 'margin-top:14px;text-align:right' },
-        h('button', { class: 'btn primary', style: 'padding:12px 32px;font-size:16px', onclick: calculate },
+        h('button', { class: 'btn primary', style: 'padding:12px 32px;font-size:16px', title: 'คำนวณว่าควรหยิบจากตำแหน่งไหนบ้าง ตำแหน่งละเท่าไร ตามลำดับ FEFO (หมดอายุก่อนหยิบก่อน) — ยังไม่ตัดสต๊อก', onclick: calculate },
           '🧮 คำนวณแผนการหยิบ'))),
 
     out);

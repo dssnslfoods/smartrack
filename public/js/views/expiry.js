@@ -1,13 +1,13 @@
 // สินค้าที่ต้องจัดการ — กฎอายุคงเหลือรายช่องทาง + คำแนะนำ (ย้ายเข้าโปรโมชัน/ตัดออก) + Recall ราย Lot
-import { api, wh } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDate, fmtDateTime, pctPill, ACTION_LABEL, ACTION_COLOR, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=38';
+import { api, wh } from '../api.js?v=42';
+import { h, field, table, pill, toast, fmtNum, fmtDate, fmtDateTime, pctPill, ACTION_LABEL, ACTION_COLOR, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=42';
 
 export async function expiryView({ params }) {
   const tab = params.get('tab') ?? 'actions';
 
   const tabBar = h('div', { class: 'tab-bar' },
-    h('button', { class: `tab ${tab === 'actions' ? 'active' : ''}`, onclick: () => { location.hash = '#/expiry'; } }, '⚠️ สินค้าที่ต้องจัดการ'),
-    h('button', { class: `tab ${tab === 'recall' ? 'active' : ''}`, onclick: () => { location.hash = '#/expiry?tab=recall'; } }, '🔎 ตรวจสอบ/เรียกคืนราย Lot'));
+    h('button', { class: `tab ${tab === 'actions' ? 'active' : ''}`, title: 'ดูรายการที่ใกล้หมดอายุหรือหมดอายุแล้ว เรียงตามความเร่งด่วน พร้อมบอกว่ายังขายช่องทางไหนได้บ้าง', onclick: () => { location.hash = '#/expiry'; } }, '⚠️ สินค้าที่ต้องจัดการ'),
+    h('button', { class: `tab ${tab === 'recall' ? 'active' : ''}`, title: 'ค้นจากหมายเลข Lot ว่าของยังอยู่ตำแหน่งไหน และเคยจ่ายออกให้ลูกค้ารายใด — ใช้ตอนต้องเรียกคืนสินค้า', onclick: () => { location.hash = '#/expiry?tab=recall'; } }, '🔎 ตรวจสอบ/เรียกคืนราย Lot'));
 
   const content = h('div', {});
 
@@ -122,7 +122,7 @@ export async function expiryView({ params }) {
         h('h2', {}, 'ตรวจสอบ/เรียกคืนสินค้าราย Lot (Recall)'),
         h('p', { class: 'muted', style: 'font-size:13px' }, 'ตอบ 2 คำถามในหน้าเดียว: Lot นี้เหลืออยู่ที่ไหนบ้าง และเคยจ่ายออกไปให้ลูกค้ารายไหนแล้ว'),
         h('div', { class: 'row' }, h('div', { style: 'flex:3' }, lotInput),
-          h('button', { class: 'btn primary', onclick: run }, 'ตรวจสอบ'))),
+          h('button', { class: 'btn primary', title: 'ค้นว่า Lot นี้ยังเหลืออยู่ตำแหน่งไหนบ้าง และเคยจ่ายออกไปให้ลูกค้ารายใด — ใช้ตอนต้องเรียกคืนสินค้า', onclick: run }, 'ตรวจสอบ'))),
       out);
     setTimeout(() => lotInput.focus(), 60);
   }

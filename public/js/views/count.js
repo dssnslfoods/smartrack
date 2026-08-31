@@ -1,6 +1,6 @@
 // นับสต็อก (Cycle Count) — เปิดรอบ → สแกนตำแหน่ง+กรอกจำนวน → เทียบผลต่าง → อนุมัติปรับยอด
-import { api, auth } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles } from '../ui.js?v=38';
+import { api, auth } from '../api.js?v=42';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles } from '../ui.js?v=42';
 
 const RSTATUS = { OPEN: ['กำลังนับ', 'blue'], APPROVED: ['อนุมัติแล้ว', 'green'], CANCELLED: ['ยกเลิก', 'gray'] };
 
@@ -56,7 +56,7 @@ async function roundList() {
         field('หมายเหตุ', note, null, 'บันทึกวัตถุประสงค์ของรอบนับ เช่น นับ FG ประจำวัน หรือนับใหญ่สิ้นเดือน')),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'สร้างรอบนับใหม่ตามขอบเขตที่เลือก — ระบบจะดึงทุกตำแหน่งที่เข้าเงื่อนไขมาเป็นรายการให้เดินนับ (ยังไม่กระทบยอดสต๊อก)', onclick: async () => {
           try {
             const res = await api.post('/api/counts', {
               warehouse_id: whSel.value || null, zone_id: zoneSel.value || null,
@@ -76,7 +76,7 @@ async function roundList() {
       h('div', {}, h('h1', {}, 'นับสต็อก (Cycle Count)'),
         h('p', {}, 'FG นับทุกวันหลัง pick เสร็จ · นับใหญ่ทุกคลังรายเดือน — ระบบเทียบผลต่างให้อัตโนมัติ')),
       auth.can('move') ? h('div', { class: 'actions' },
-        h('button', { class: 'btn primary', onclick: newRound }, '+ เปิดรอบนับใหม่')) : null),
+        h('button', { class: 'btn primary', title: 'เริ่มรอบนับสต็อกใหม่ — เลือกคลัง โซน และประเภทสินค้าที่จะนับ ก่อนออกไปนับหน้างาน', onclick: newRound }, '+ เปิดรอบนับใหม่')) : null),
     h('div', { class: 'card' }, listBox));
 }
 
@@ -181,7 +181,7 @@ async function roundDetail(roundId) {
           h('p', { class: 'muted', style: 'font-size:12.5px;margin-top:10px' }, `ℹ️ ${r.disclaimer}`)),
         [
           h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-          h('button', { class: 'btn primary', onclick: () => {
+          h('button', { class: 'btn primary', title: 'เติมตัวเลขที่ AI ประมาณได้ลงช่อง "นับได้" เพื่อให้ตรวจก่อน — ยังไม่บันทึก ต้องกดปุ่มบันทึกเองอีกครั้ง', onclick: () => {
             qtyInput.value = String(r.counted);
             noteInput.value = `นับจากรูป (${r.confidence}) — ${r.counting_basis}`.slice(0, 200);
             m.close(); qtyInput.focus(); qtyInput.select();
@@ -213,13 +213,13 @@ async function roundDetail(roundId) {
           round.note, `เปิดโดย ${round.created_by_name ?? '-'}`].filter(Boolean).join(' — '))),
       h('div', { class: 'actions' },
         pill(...RSTATUS[round.status]),
-        isOpen && auth.can('manage') ? h('button', { class: 'btn danger', onclick: async () => {
+        isOpen && auth.can('manage') ? h('button', { class: 'btn danger', title: 'ยกเลิกรอบนับนี้ทิ้ง — ผลนับที่บันทึกไว้ทั้งหมดจะไม่ถูกนำไปปรับยอด และเปิดรอบนี้ซ้ำไม่ได้', onclick: async () => {
           if (await confirmBox('ยกเลิกรอบนับ', 'ผลนับที่บันทึกไว้จะไม่ถูกนำไปปรับยอด', 'ยกเลิกรอบนับ')) {
             await api.post(`/api/counts/${roundId}/cancel`); location.hash = '#/count';
           }
         } }, 'ยกเลิกรอบ') : null,
-        isOpen && auth.can('manage') ? h('button', { class: 'btn primary', onclick: approve }, '✅ อนุมัติ + ปรับยอด') : null,
-        h('a', { class: 'btn', href: '#/count' }, '← รอบนับทั้งหมด'))),
+        isOpen && auth.can('manage') ? h('button', { class: 'btn primary', title: 'ปิดรอบนับและปรับยอดสต๊อกทุกตำแหน่งที่นับได้ไม่ตรง โดยออกเป็นเอกสารปรับยอด — ทำแล้วแก้ไม่ได้ ควรนับให้ครบก่อน', onclick: approve }, '✅ อนุมัติ + ปรับยอด') : null,
+        h('a', { class: 'btn', title: 'กลับไปหน้ารายการรอบนับทั้งหมด — ผลนับที่บันทึกไว้ยังอยู่ครบ กลับมานับต่อได้', href: '#/count' }, '← รอบนับทั้งหมด'))),
     progressEl,
     isOpen && auth.can('move') ? h('div', { class: 'card' },
       h('h2', {}, '⚡ นับเร็ว'),
@@ -228,8 +228,8 @@ async function roundDetail(roundId) {
         h('div', { style: 'flex:1' }, field('นับได้', qtyInput, null, 'จำนวนสินค้าจริงที่นับได้ ณ ตำแหน่งนั้น')),
         h('div', { style: 'flex:2' }, field('หมายเหตุ', noteInput, null, 'บันทึกเหตุผลหากนับได้ไม่ตรง เช่น สินค้าชำรุด แตกหัก')),
         h('div', { style: 'flex:0;align-self:flex-end;display:flex;gap:6px' },
-          aiOn ? h('button', { class: 'btn', title: 'ถ่ายรูปหน้าชั้นวางให้ AI ช่วยนับ', onclick: countFromPhoto }, '📷 นับจากรูป') : null,
-          h('button', { class: 'btn primary', onclick: submitCount }, 'บันทึก')))) : null,
+          aiOn ? h('button', { class: 'btn', title: 'ถ่ายรูปชั้นวางให้ AI ช่วยประมาณจำนวน — ต้องตรวจตัวเลขและกดบันทึกเองเสมอ AI บันทึกข้อมูลแทนไม่ได้', onclick: countFromPhoto }, '📷 นับจากรูป') : null,
+          h('button', { class: 'btn primary', title: 'บันทึกจำนวนที่นับได้ของตำแหน่งนี้ แล้วเทียบผลต่างกับยอดในระบบทันที (ยอดสต๊อกจะยังไม่เปลี่ยนจนกว่าจะอนุมัติรอบ)', onclick: submitCount }, 'บันทึก')))) : null,
     h('div', { class: 'card' },
       h('div', { class: 'card-head' },
         h('h2', {}, 'บรรทัดนับทั้งหมด'),

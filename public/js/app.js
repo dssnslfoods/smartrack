@@ -1,38 +1,38 @@
 // โครงหลักของแอป: เมนู · ช่องค้นหาด้านบน · การสลับหน้า
-import { api, auth, wh } from './api.js';
-import { h, $ } from './ui.js?v=38';
-import { loginView } from './views/login.js';
-import { dashboardView } from './views/dashboard.js';
-import { searchView } from './views/search.js?v=38';
-import { pickView } from './views/pick.js?v=38';
-import { overviewView, rackView } from './views/map.js?v=38';
-import { historyView } from './views/history.js';
-import { settingsView } from './views/settings.js?v=38';
-import { reportsView } from './views/reports.js';
-import { warehouseListView, warehouseLayoutView } from './views/layout.js';
-import { inboundView } from './views/inbound.js?v=38';
-import { outboundView } from './views/outbound.js?v=38';
-import { docsView } from './views/docs.js?v=38';
-import { expiryView } from './views/expiry.js?v=38';
-import { countView } from './views/count.js?v=38';
-import { copilotView, insightsView } from './views/ai.js?v=38';
+import { api, auth, wh } from './api.js?v=42';
+import { h, $ } from './ui.js?v=42';
+import { loginView } from './views/login.js?v=42';
+import { dashboardView } from './views/dashboard.js?v=42';
+import { searchView } from './views/search.js?v=42';
+import { pickView } from './views/pick.js?v=42';
+import { overviewView, rackView } from './views/map.js?v=42';
+import { historyView } from './views/history.js?v=42';
+import { settingsView } from './views/settings.js?v=42';
+import { reportsView } from './views/reports.js?v=42';
+import { warehouseListView, warehouseLayoutView } from './views/layout.js?v=42';
+import { inboundView } from './views/inbound.js?v=42';
+import { outboundView } from './views/outbound.js?v=42';
+import { docsView } from './views/docs.js?v=42';
+import { expiryView } from './views/expiry.js?v=42';
+import { countView } from './views/count.js?v=42';
+import { copilotView, insightsView } from './views/ai.js?v=42';
 
 const NAV = [
-  { path: '#/', icon: '🏠', label: 'หน้าแรก' },
-  { path: '#/search', icon: '🔍', label: 'ค้นหาสินค้า' },
-  { path: '#/inbound', icon: '📥', label: 'รับเข้า (GRN)', sec: 'งานคลัง' },
-  { path: '#/pick', icon: '📤', label: 'วางแผนหยิบสินค้า' },
-  { path: '#/outbound', icon: '🚚', label: 'งานจ่ายออก' },
-  { path: '#/docs', icon: '📋', label: 'โอน / คืน / ตัดเสีย' },
-  { path: '#/count', icon: '🔢', label: 'นับสต็อก' },
-  { path: '#/map', icon: '🗺️', label: 'แผนผังชั้นวาง', sec: 'คลังสินค้า' },
-  { path: '#/history', icon: '🕘', label: 'ประวัติการเคลื่อนย้าย' },
-  { path: '#/copilot', icon: '📦', label: 'น้องสต๊อค (ผู้ช่วย)', sec: 'ผู้ช่วยอัจฉริยะ' },
-  { path: '#/insights', icon: '🧠', label: 'วิเคราะห์เชิงลึก' },
-  { path: '#/expiry', icon: '⚠️', label: 'อายุสินค้า & Recall', sec: 'ผู้บริหาร' },
-  { path: '#/reports', icon: '📊', label: 'รายงาน' },
-  { path: '#/layout', icon: '🏗️', label: 'ผังคลังสินค้า', sec: 'ตั้งค่าระบบ' },
-  { path: '#/settings', icon: '⚙️', label: 'ข้อมูลหลัก', perm: 'manage' },
+  { path: '#/', icon: '🏠', label: 'หน้าแรก', tip: 'ภาพรวมคลังวันนี้ — พื้นที่ที่ใช้ไป ของใกล้หมดอายุ และงานที่ค้างอยู่' },
+  { path: '#/search', icon: '🔍', label: 'ค้นหาสินค้า', tip: 'หาว่าสินค้าอยู่ชั้นวางไหน ชั้นใด ตอนที่เท่าไร ดูได้ทั้งแบบตารางและแผนผัง' },
+  { path: '#/inbound', icon: '📥', label: 'รับเข้า (GRN)', sec: 'งานคลัง', tip: 'รับสินค้าเข้าคลัง — บันทึกหลายรายการ/หลาย Lot ในใบเดียว หรือให้ AI สแกนใบส่งของมาเติมให้' },
+  { path: '#/pick', icon: '📤', label: 'วางแผนหยิบสินค้า', tip: 'คำนวณว่าควรหยิบจากตำแหน่งไหนตามหลัก FEFO แล้วพิมพ์ใบเบิกให้พนักงานถือเข้าคลัง' },
+  { path: '#/outbound', icon: '🚚', label: 'งานจ่ายออก', tip: 'ติดตามใบจ่ายสินค้าตั้งแต่หยิบ แพ็ค จนถึงส่งมอบ พร้อมบันทึกเลขพัสดุ' },
+  { path: '#/docs', icon: '📋', label: 'โอน / คืน / ตัดเสีย', tip: 'ย้ายของระหว่างตำแหน่ง · รับคืนจากลูกค้า · ส่งคืนผู้ขาย · ตัดของเสียออกจากระบบ' },
+  { path: '#/count', icon: '🔢', label: 'นับสต็อก', tip: 'เปิดรอบนับ บันทึกจำนวนที่นับได้จริง แล้วอนุมัติเพื่อปรับยอดให้ตรงกับของจริง' },
+  { path: '#/map', icon: '🗺️', label: 'แผนผังชั้นวาง', sec: 'คลังสินค้า', tip: 'ดูผังคลังและชั้นวางทีละตัว คลิกช่องว่างเพื่อจัดเก็บ คลิกช่องที่มีของเพื่อหยิบหรือย้าย' },
+  { path: '#/history', icon: '🕘', label: 'ประวัติการเคลื่อนย้าย', tip: 'ทุกการเคลื่อนไหวของสินค้าย้อนหลัง — ลบไม่ได้ ใช้ตรวจสอบย้อนกลับได้เสมอ' },
+  { path: '#/copilot', icon: '📦', label: 'น้องสต๊อค (ผู้ช่วย)', sec: 'ผู้ช่วยอัจฉริยะ', tip: 'ถามเรื่องคลังเป็นภาษาไทย น้องสต๊อคจะดึงข้อมูลจริงจากระบบมาตอบ (ดูอย่างเดียว แก้ไขไม่ได้)' },
+  { path: '#/insights', icon: '🧠', label: 'วิเคราะห์เชิงลึก', tip: 'วิเคราะห์ 6 มุม — ของจะขายไม่ทัน · พยากรณ์สั่งเติม · จัดตำแหน่งใหม่ · ความผิดปกติ · ภาระงาน' },
+  { path: '#/expiry', icon: '⚠️', label: 'อายุสินค้า & Recall', sec: 'ผู้บริหาร', tip: 'เฝ้าดูของใกล้หมดอายุ และค้นหาว่า Lot ที่ต้องเรียกคืนถูกส่งไปที่ไหนบ้าง' },
+  { path: '#/reports', icon: '📊', label: 'รายงาน', tip: 'รายงานสรุป — การใช้พื้นที่ อายุสินค้าคงคลัง และความเคลื่อนไหวตามช่วงเวลา' },
+  { path: '#/layout', icon: '🏗️', label: 'ผังคลังสินค้า', sec: 'ตั้งค่าระบบ', tip: 'จัดวางตำแหน่ง RACK บนผังพื้นให้ตรงกับคลังจริง เพื่อให้แผนผังใช้นำทางได้' },
+  { path: '#/settings', icon: '⚙️', label: 'ข้อมูลหลัก', perm: 'manage', tip: 'ตั้งค่าคลัง โซน ชั้นวาง สินค้า ช่องทางขาย ผู้ใช้งาน และ AI' },
 ];
 
 const ROUTES = [
@@ -74,7 +74,7 @@ function layout() {
       ...NAV.filter((i) => !i.perm || auth.can(i.perm))
         .flatMap((i) => [
           i.sec ? h('div', { class: 'sec' }, i.sec) : null,
-          h('a', { href: i.path, 'data-path': i.path }, i.icon, i.label),
+          h('a', { href: i.path, 'data-path': i.path, title: i.tip }, i.icon, i.label),
         ].filter(Boolean))));
 
   const search = h('input', {
@@ -88,13 +88,15 @@ function layout() {
   return h('div', { class: 'app' }, sidebar,
     h('main', { class: 'main' },
       h('header', { class: 'topbar' },
-        h('button', { class: 'btn ghost menu-toggle', onclick: () => $('#sidebar').classList.toggle('open') }, '☰'),
+        h('button', { class: 'btn ghost menu-toggle', title: 'เปิด/ปิดเมนูด้านซ้าย — ใช้บนจอเล็กอย่างแท็บเล็ตหรือมือถือ',
+          onclick: () => $('#sidebar').classList.toggle('open') }, '☰'),
         h('div', { class: 'searchbox' }, h('span', { class: 'icon' }, '🔍'), search),
         h('div', { class: 'who' },
           h('div', {}, h('div', { style: 'font-weight:700' }, user.full_name),
             h('span', { class: 'badge-role' }, user.role_name)),
           h('button', {
             class: 'btn ghost',
+            title: 'ออกจากระบบและกลับไปหน้าเข้าสู่ระบบ — งานที่ยังไม่กดบันทึกจะหายไป',
             onclick: async () => { try { await api.post('/api/auth/logout'); } catch {} auth.clear(); location.hash = '#/login'; location.reload(); },
           }, 'ออกจากระบบ'))),
       h('div', { class: 'offline-bar', id: 'offlineBar', style: 'display:none' },

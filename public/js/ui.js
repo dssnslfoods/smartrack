@@ -46,9 +46,12 @@ export const confirmBox = (title, message, okLabel = 'ยืนยัน') =>
     ]);
   });
 
-export const field = (label, input, hint, tip) =>
+/** ไอคอน ? อธิบายเพิ่ม — ใช้ต่อท้ายหัวข้อหรือป้ายอะไรก็ได้ ไม่ใช่แค่ในฟอร์ม */
+export const tip = (text) => (text ? h('span', { class: 'tip', title: text }, '?') : null);
+
+export const field = (label, input, hint, tipText) =>
   h('div', { class: 'field' },
-    h('label', {}, label, tip ? h('span', { class: 'tip', title: tip }, '?') : null),
+    h('label', {}, label, tip(tipText)),
     input, hint ? h('div', { class: 'hint' }, hint) : null);
 
 export function table(columns, rows, { onRow, empty = 'ไม่พบข้อมูล' } = {}) {

@@ -1,6 +1,6 @@
 // ผังคลังสินค้า — เลือกคลัง แล้วจัดวาง RACK บนผังพื้น (เฉพาะ ADMIN แก้ไขได้)
-import { api, auth } from '../api.js';
-import { h, field, modal, toast, pill, fmtNum, confirmBox } from '../ui.js?v=38';
+import { api, auth } from '../api.js?v=42';
+import { h, field, modal, toast, pill, fmtNum, confirmBox } from '../ui.js?v=42';
 
 const ZONE_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
@@ -41,7 +41,7 @@ export async function warehouseListView() {
         h('p', {}, 'เลือกคลังเพื่อจัดวางชั้นวาง (RACK) และกำหนดโซนจัดเก็บ')),
       canManage
         ? h('div', { class: 'actions' },
-            h('button', { class: 'btn primary', onclick: () => warehouseForm(null, () => reload()) }, '+ เพิ่มคลังสินค้า'))
+            h('button', { class: 'btn primary', title: 'สร้างคลังสินค้าใหม่พร้อมกำหนดขนาดผังพื้น (คอลัมน์ × แถว) — จากนั้นจึงเพิ่มโซนและชั้นวางเข้าไป', onclick: () => warehouseForm(null, () => reload()) }, '+ เพิ่มคลังสินค้า'))
         : null),
     cards);
 }
@@ -195,11 +195,12 @@ export async function warehouseLayoutView({ match }) {
           kv('สถานะ', r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิดใช้งาน')),
         r.note ? h('p', { class: 'muted', style: 'margin-top:8px' }, r.note) : null),
       [
-        h('a', { class: 'btn', href: `#/map/${r.rag_id}` }, '🗺️ ดูแผนผังภายใน'),
-        canManage ? h('button', { class: 'btn', onclick: () => { m.close(); selected = r; renderBoard(); } }, '✥ ย้ายตำแหน่ง') : null,
-        canManage ? h('button', { class: 'btn', onclick: () => { m.close(); rackForm(r); } }, '✎ แก้ไข') : null,
+        h('a', { class: 'btn', title: 'เปิดผังภายในชั้นวางนี้ ดูทุกช่องแยกตามชั้น (Level) และตอน (Depth) ว่ามีสินค้าอะไรอยู่', href: `#/map/${r.rag_id}` }, '🗺️ ดูแผนผังภายใน'),
+        canManage ? h('button', { class: 'btn', title: 'ย้ายชั้นวางนี้ไปช่องอื่นบนผังพื้น — ปิดหน้าต่างแล้วคลิกช่องปลายทางที่ต้องการ (รหัสตำแหน่งสินค้าไม่เปลี่ยน)', onclick: () => { m.close(); selected = r; renderBoard(); } }, '✥ ย้ายตำแหน่ง') : null,
+        canManage ? h('button', { class: 'btn', title: 'แก้ไขหมายเลข โซน จำนวนชั้น/ตอน หรือปิดใช้งานชั้นวางนี้ — การเพิ่มชั้น/ตอนจะสร้างตำแหน่งใหม่เพิ่มให้อัตโนมัติ', onclick: () => { m.close(); rackForm(r); } }, '✎ แก้ไข') : null,
         canManage ? h('button', {
           class: 'btn danger',
+          title: `ลบชั้นวางนี้พร้อมตำแหน่งจัดเก็บทั้ง ${r.total} ช่องออกจากระบบถาวร — ทำได้ต่อเมื่อไม่มีสินค้าค้างอยู่`,
           onclick: async () => {
             if (!(await confirmBox('ลบชั้นวาง', `ลบ ${r.zone_code}-${r.rag_no} และตำแหน่งทั้งหมด ${r.total} ช่อง?`, 'ลบ'))) return;
             try { await api.del(`/api/rags/${r.rag_id}`); toast('ลบชั้นวางแล้ว'); m.close(); refresh(); }
@@ -233,7 +234,7 @@ export async function warehouseLayoutView({ match }) {
         at ? h('div', { class: 'hint' }, `จะวางที่ช่อง คอลัมน์ ${at.x + 1} · แถว ${at.y + 1}`) : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: r ? 'บันทึกการแก้ไขชั้นวาง — ถ้าเพิ่มจำนวนชั้นหรือตอน ระบบจะสร้างรหัสตำแหน่งใหม่ให้อัตโนมัติ' : 'สร้างชั้นวางและวางลงบนผัง — ระบบจะสร้างรหัสตำแหน่งครบทุกช่องให้อัตโนมัติ ({โซน}-{RACK}-L{ชั้น}-D{ตอน})', onclick: async () => {
           try {
             const body = {
               rag_no: no.value.trim(), zone_id: Number(zoneSel.value),
@@ -277,13 +278,14 @@ export async function warehouseLayoutView({ match }) {
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         z && !z.rack_count ? h('button', {
           class: 'btn danger',
+          title: 'ลบโซนนี้ออกจากระบบถาวร — ปุ่มนี้แสดงเฉพาะโซนที่ยังไม่มีชั้นวางอยู่',
           onclick: async () => {
             if (!(await confirmBox('ลบโซน', `ลบโซน ${z.zone_code}?`, 'ลบ'))) return;
             try { await api.del(`/api/zones/${z.zone_id}`); toast('ลบโซนแล้ว'); m.close(); refresh(); }
             catch (err) { toast(err.message, 'err'); }
           },
         }, '🗑 ลบ') : null,
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: z ? 'บันทึกการแก้ไขโซน — รหัสโซนถูกใช้เป็นส่วนหน้าของรหัสตำแหน่ง เปลี่ยนแล้วมีผลกับชั้นวางในโซนนี้ทั้งหมด' : 'สร้างโซนจัดเก็บใหม่ในคลังนี้ — ต้องมีโซนก่อนจึงจะเพิ่มชั้นวางได้', onclick: async () => {
           try {
             const body = {
               zone_code: code.value.trim(), zone_name: name.value.trim(),
@@ -305,7 +307,7 @@ export async function warehouseLayoutView({ match }) {
   const zonePanel = h('div', { class: 'card' },
     h('div', { class: 'card-head' },
       h('h2', {}, 'โซนจัดเก็บ'),
-      canManage ? h('button', { class: 'btn', onclick: () => zoneForm() }, '+ เพิ่มโซน') : null),
+      canManage ? h('button', { class: 'btn', title: 'เพิ่มโซนจัดเก็บใหม่ เช่น FG (สินค้าสำเร็จรูป) RM (วัตถุดิบ) — ต้องมีโซนก่อนจึงจะสร้างชั้นวางได้', onclick: () => zoneForm() }, '+ เพิ่มโซน') : null),
     zones.length
       ? h('div', { class: 'zone-list' },
           ...zones.map((z) =>
@@ -333,8 +335,8 @@ export async function warehouseLayoutView({ match }) {
       h('div', { class: 'actions' },
         pill(`ใช้พื้นที่ ${pct}%`, pct >= 90 ? 'red' : 'blue'),
         pill(`${fmtNum(totalOcc)}/${fmtNum(totalLoc)} ตำแหน่ง`, 'gray'),
-        canManage ? h('button', { class: 'btn', onclick: () => warehouseForm(w, refresh) }, '⚙️ ตั้งค่าคลัง') : null,
-        h('a', { class: 'btn', href: '#/layout' }, '← คลังทั้งหมด'))),
+        canManage ? h('button', { class: 'btn', title: 'แก้ไขชื่อ ที่อยู่ และขนาดผังพื้นของคลังนี้ — ลดขนาดผังได้เฉพาะเมื่อไม่มีชั้นวางอยู่นอกขอบเขตใหม่', onclick: () => warehouseForm(w, refresh) }, '⚙️ ตั้งค่าคลัง') : null,
+        h('a', { class: 'btn', title: 'กลับไปหน้ารายการคลังสินค้าทั้งหมด — การเปลี่ยนแปลงบนผังถูกบันทึกไว้แล้ว', href: '#/layout' }, '← คลังทั้งหมด'))),
 
     h('div', { class: 'layout-split' },
       h('div', { class: 'card' },
@@ -366,13 +368,14 @@ function warehouseForm(w, onDone) {
       h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
       w ? h('button', {
         class: 'btn danger',
+        title: 'ลบคลังสินค้านี้ออกจากระบบถาวร — ต้องลบโซนและชั้นวางทั้งหมดในคลังออกก่อน',
         onclick: async () => {
           if (!(await confirmBox('ลบคลังสินค้า', `ลบคลัง ${w.wh_code}? (ต้องไม่มีโซนเหลืออยู่)`, 'ลบ'))) return;
           try { await api.del(`/api/warehouses/${w.warehouse_id}`); toast('ลบคลังแล้ว'); m.close(); location.hash = '#/layout'; location.reload(); }
           catch (err) { toast(err.message, 'err'); }
         },
       }, '🗑 ลบ') : null,
-      h('button', { class: 'btn primary', onclick: async () => {
+      h('button', { class: 'btn primary', title: w ? 'บันทึกการตั้งค่าคลัง — ถ้าย่อขนาดผังพื้น ต้องไม่มีชั้นวางอยู่นอกขอบเขตใหม่' : 'สร้างคลังสินค้าใหม่ตามขนาดผังที่กำหนด — ขั้นต่อไปคือเพิ่มโซนแล้วจึงวางชั้นวาง', onclick: async () => {
         try {
           const body = {
             wh_code: code.value.trim(), wh_name: name.value.trim(),

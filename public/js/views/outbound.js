@@ -1,6 +1,6 @@
 // งานจ่ายออก — ติดตามสถานะ Picked → Packed → Shipped → Delivered + ใบส่งสินค้า + Tracking
-import { api, auth, openLabels } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, SHIP_LABEL, SHIP_COLOR } from '../ui.js?v=38';
+import { api, auth, openLabels } from '../api.js?v=42';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, SHIP_LABEL, SHIP_COLOR } from '../ui.js?v=42';
 
 const NEXT = { PICKED: 'PACKED', PACKED: 'SHIPPED', SHIPPED: 'DELIVERED' };
 const NEXT_LABEL = { PICKED: '📦 แพ็คเสร็จ', PACKED: '🚚 ส่งออกแล้ว', SHIPPED: '✅ ถึงปลายทาง' };
@@ -37,7 +37,7 @@ export async function outboundView() {
       { label: 'จำนวนรวม', value: (r) => fmtNum(r.total_qty), num: true },
       { label: 'สถานะ', value: (r) => pill(SHIP_LABEL[r.ship_status] ?? r.ship_status, SHIP_COLOR[r.ship_status] ?? 'gray') },
       { label: 'Tracking', value: (r) => r.tracking_no || '—', mono: true },
-      { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => showDoc(r.doc_id) }, 'จัดการ') },
+      { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'เปิดใบจ่ายสินค้าใบนี้ เพื่อดูรายการของ ใส่เลข Tracking และเลื่อนสถานะการจัดส่งขั้นถัดไป', onclick: () => showDoc(r.doc_id) }, 'จัดการ') },
     ], rows, { empty: 'ไม่มีใบจ่ายสินค้า — สร้างได้จากหน้า "วางแผนหยิบสินค้า"' }));
   }
 
@@ -69,14 +69,14 @@ export async function outboundView() {
         ], movements)),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ปิด'),
-        h('button', { class: 'btn', onclick: () => openLabels('/labels/delivery', { doc_id: doc.doc_id }).catch((e) => toast(e.message, 'err')) }, '🖨️ ใบส่งสินค้า'),
-        auth.can('move') ? h('button', { class: 'btn', onclick: async () => {
+        h('button', { class: 'btn', title: 'พิมพ์ใบส่งสินค้าของใบจ่ายนี้ ให้แนบไปกับพัสดุหรือให้ลูกค้าเซ็นรับตอนส่งมอบ', onclick: () => openLabels('/labels/delivery', { doc_id: doc.doc_id }).catch((e) => toast(e.message, 'err')) }, '🖨️ ใบส่งสินค้า'),
+        auth.can('move') ? h('button', { class: 'btn', title: 'บันทึกเลข Tracking และชื่อขนส่งไว้กับใบจ่ายนี้ โดยยังไม่เลื่อนสถานะการจัดส่ง', onclick: async () => {
           try {
             await api.patch(`/api/docs/${doc.doc_id}/ship`, { tracking_no: tracking.value, carrier: carrier.value });
             toast('บันทึก Tracking แล้ว'); m.close(); load();
           } catch (err) { toast(err.message, 'err'); }
         } }, '💾 บันทึก Tracking') : null,
-        auth.can('move') && NEXT[doc.ship_status] ? h('button', { class: 'btn primary', onclick: async () => {
+        auth.can('move') && NEXT[doc.ship_status] ? h('button', { class: 'btn primary', title: `เลื่อนสถานะจาก "${SHIP_LABEL[doc.ship_status]}" เป็น "${SHIP_LABEL[NEXT[doc.ship_status]]}" พร้อมบันทึกเวลาไว้ในไทม์ไลน์ — เลื่อนแล้วถอยกลับเองไม่ได้`, onclick: async () => {
           try {
             await api.patch(`/api/docs/${doc.doc_id}/ship`, {
               ship_status: NEXT[doc.ship_status], tracking_no: tracking.value, carrier: carrier.value,

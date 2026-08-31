@@ -1,7 +1,7 @@
 // แผนผังคลัง — ผังพื้นคลังเลือก RACK + แผนผัง RACK รายตัว (ชั้น × ความลึก) + จัดเก็บสินค้า
-import { api, auth, wh, openLabels } from '../api.js';
-import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table } from '../ui.js?v=38';
-import { itemActions } from '../actions.js';
+import { api, auth, wh, openLabels } from '../api.js?v=42';
+import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table } from '../ui.js?v=42';
+import { itemActions } from '../actions.js?v=42';
 
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
 
@@ -216,7 +216,7 @@ export async function rackView({ match, params }) {
 
     modal(`ตำแหน่ง ${c.location_code}`, h('div', {}, rows, history),
       [
-        item ? h('a', { class: 'btn', href: `#/search?q=${encodeURIComponent(c.location_code)}` }, '🔍 ค้นหา') : null,
+        item ? h('a', { class: 'btn', title: 'เปิดหน้าค้นหาโดยใช้รหัสตำแหน่งนี้ เพื่อดูรายละเอียดสินค้าและประวัติการเคลื่อนไหวทั้งหมด', href: `#/search?q=${encodeURIComponent(c.location_code)}` }, '🔍 ค้นหา') : null,
         ...(item ? itemActions({ ...item, location_code: c.location_code }, reload) : []),
       ].filter(Boolean));
   }
@@ -227,6 +227,7 @@ export async function rackView({ match, params }) {
       auth.can('manage')
         ? [h('button', {
             class: 'btn primary',
+            title: 'เปิดตำแหน่งนี้กลับมาใช้งาน — จะกลายเป็นช่องว่างที่นำสินค้ามาวางได้และถูกนำไปเสนอเป็นตำแหน่งจัดเก็บอีกครั้ง',
             onclick: async () => {
               try {
                 await api.patch(`/api/locations/${c.location_id}`, { status: 'EMPTY' });
@@ -284,6 +285,7 @@ export async function rackView({ match, params }) {
           ? h('button', {
               class: 'btn danger',
               style: 'margin-right:auto',
+              title: 'ปิดตำแหน่งนี้ไม่ให้นำสินค้ามาวาง เช่น ชั้นชำรุดหรือกันพื้นที่ไว้ — ระบบจะไม่เสนอเป็นตำแหน่งจัดเก็บอีก เปิดคืนได้ภายหลัง',
               onclick: async () => {
                 try {
                   await api.patch(`/api/locations/${c.location_id}`, { status: 'DISABLED' });
@@ -292,7 +294,7 @@ export async function rackView({ match, params }) {
               },
             }, 'ปิดใช้งาน')
           : null,
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'นำสินค้าตามที่กรอกเข้าเก็บที่ตำแหน่งนี้ — สต๊อกเพิ่มทันที ช่องจะเปลี่ยนเป็นมีสินค้า และ 1 ตำแหน่งเก็บได้ 1 พาเลทเท่านั้น', onclick: async () => {
           if (!skuSel.value) { toast('กรุณาเลือกสินค้า', 'err'); return; }
           try {
             const res = await api.post('/api/items', {
@@ -322,8 +324,8 @@ export async function rackView({ match, params }) {
       h('div', { class: 'actions' },
         pill(`ใช้พื้นที่ ${stats.usage_pct}%`, stats.usage_pct >= 90 ? 'red' : 'blue'),
         pill(`ว่าง ${stats.empty}`, 'green'),
-        auth.can('view') ? h('button', { class: 'btn', onclick: () => openLabels('/labels/location', { rag_id: ragId }) }, '🏷️ พิมพ์ป้าย') : null,
-        h('a', { class: 'btn', href: '#/map' }, '← ผังพื้นคลัง'))),
+        auth.can('view') ? h('button', { class: 'btn', title: 'เปิดหน้าพิมพ์ป้ายบาร์โค้ดของทุกตำแหน่งในชั้นวางนี้ สำหรับติดหน้าชั้นให้สแกนตอนรับเข้า/หยิบออก', onclick: () => openLabels('/labels/location', { rag_id: ragId }) }, '🏷️ พิมพ์ป้าย') : null,
+        h('a', { class: 'btn', title: 'กลับไปผังพื้นคลังเพื่อเลือกชั้นวางอื่น', href: '#/map' }, '← ผังพื้นคลัง'))),
     h('div', { style: 'font-size:13px;color:#64748b;margin-bottom:8px' },
       canMove
         ? 'คลิกช่องว่างเพื่อจัดเก็บสินค้า · คลิกช่องที่มีสินค้าเพื่อหยิบออก/ย้าย · ← ด้านหน้า (ทางเดิน) →'

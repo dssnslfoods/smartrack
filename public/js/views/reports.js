@@ -1,13 +1,13 @@
 // รายงานผู้บริหาร — 5 รายงานหลักสำหรับการตัดสินใจ
-import { api, wh, download } from '../api.js';
-import { h, table, pill, fmtNum, fmtDate, fmtDateTime } from '../ui.js?v=38';
+import { api, wh, download } from '../api.js?v=42';
+import { h, table, pill, fmtNum, fmtDate, fmtDateTime } from '../ui.js?v=42';
 
 const TABS = [
-  { key: 'inventory', label: '📦 สินค้าคงคลัง' },
-  { key: 'expiry', label: '⏰ ใกล้หมดอายุ' },
-  { key: 'space', label: '📊 การใช้พื้นที่' },
-  { key: 'movements', label: '📈 การเคลื่อนไหว' },
-  { key: 'staff', label: '👥 ประสิทธิภาพพนักงาน' },
+  { key: 'inventory', label: '📦 สินค้าคงคลัง', tip: 'ยอดคงเหลือทั้งคลัง ดูรวมตามสินค้า ตามโซน หรือตามหมวดหมู่ก็ได้' },
+  { key: 'expiry', label: '⏰ ใกล้หมดอายุ', tip: 'Lot ที่จะหมดอายุภายใน 90 วัน เรียงจากด่วนที่สุด — ใช้วางแผนระบายของ' },
+  { key: 'space', label: '📊 การใช้พื้นที่', tip: 'ดูว่าแต่ละโซนและชั้นวางใช้พื้นที่ไปกี่ % เหลือที่ว่างตรงไหนบ้าง' },
+  { key: 'movements', label: '📈 การเคลื่อนไหว', tip: 'สรุปการรับเข้า-จ่ายออกตามช่วงเวลา ใช้ดูแนวโน้มและปริมาณงาน' },
+  { key: 'staff', label: '👥 ประสิทธิภาพพนักงาน', tip: 'จำนวนรายการที่แต่ละคนทำ และค่าเฉลี่ยต่อวัน ใช้ประเมินภาระงาน' },
 ];
 
 export async function reportsView({ params }) {
@@ -17,7 +17,7 @@ export async function reportsView({ params }) {
 
   function renderTabs() {
     tabBar.replaceChildren(...TABS.map((t) =>
-      h('button', { class: `tab ${t.key === active ? 'active' : ''}`, onclick: () => { active = t.key; renderTabs(); load(); } }, t.label)));
+      h('button', { class: `tab ${t.key === active ? 'active' : ''}`, title: t.tip, onclick: () => { active = t.key; renderTabs(); load(); } }, t.label)));
   }
 
   async function load() {
@@ -38,8 +38,13 @@ export async function reportsView({ params }) {
       const data = await api.get('/api/reports/inventory', { group_by: groupBy, warehouse_id: wh.id });
       const groupBtns = h('div', { class: 'tabs', style: 'margin-bottom:14px' },
         ...['sku', 'zone', 'category'].map((g) =>
-          h('button', { class: `${g === groupBy ? 'active' : ''}`, onclick: () => { groupBy = g; render(); } },
-            g === 'sku' ? 'ตาม SKU' : g === 'zone' ? 'ตามโซน' : 'ตามหมวดหมู่')));
+          h('button', {
+            class: `${g === groupBy ? 'active' : ''}`,
+            title: g === 'sku' ? 'รวมยอดทีละสินค้า — ดูว่าสินค้าแต่ละตัวเหลือเท่าไร กระจายอยู่กี่ตำแหน่ง'
+              : g === 'zone' ? 'รวมยอดทีละโซน — ดูว่าของกองอยู่โซนไหนมากที่สุด'
+              : 'รวมยอดทีละหมวดหมู่สินค้า เช่น ครีม สบู่ แชมพู',
+            onclick: () => { groupBy = g; render(); },
+          }, g === 'sku' ? 'ตาม SKU' : g === 'zone' ? 'ตามโซน' : 'ตามหมวดหมู่')));
 
       let tbl;
       if (groupBy === 'sku') {

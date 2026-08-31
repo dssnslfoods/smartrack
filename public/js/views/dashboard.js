@@ -1,7 +1,7 @@
 // หน้าแรก — สรุปว่าคลังใช้ไปเท่าไร ว่างเท่าไร และรายการเคลื่อนย้ายล่าสุด
-import { api, auth, wh } from '../api.js';
+import { api, auth, wh } from '../api.js?v=42';
 
-import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR, scanInput, toast } from '../ui.js?v=38';
+import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR, scanInput, toast } from '../ui.js?v=42';
 
 export async function dashboardView() {
   const d = await api.get('/api/dashboard', { warehouse_id: wh.id });
@@ -26,7 +26,7 @@ export async function dashboardView() {
 
   const recent = h('div', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', {}, 'การเคลื่อนย้ายล่าสุด'),
-      h('a', { class: 'btn ghost', href: '#/history' }, 'ดูทั้งหมด')),
+      h('a', { class: 'btn ghost', title: 'เปิดหน้าประวัติการเคลื่อนย้ายทั้งหมด ค้นย้อนหลังตามช่วงวันที่ สินค้า หรือตำแหน่งได้', href: '#/history' }, 'ดูทั้งหมด')),
     table([
       { label: 'เวลา', value: (m) => fmtDateTime(m.moved_at) },
       { label: 'รายการ', value: (m) => pill(MOVE_LABEL[m.movement_type], MOVE_COLOR[m.movement_type]) },
@@ -41,8 +41,8 @@ export async function dashboardView() {
     h('div', { class: 'page-head' },
       h('div', {}, h('h1', {}, `ภาพรวมคลังสินค้า`), h('p', {}, `คลัง: ${wh.label} · ข้อมูล ณ ${new Date().toLocaleString('th-TH')}`)),
       h('div', { class: 'actions' },
-        auth.can('move') ? h('a', { class: 'btn primary', href: '#/map' }, '📥 จัดเก็บสินค้า') : null,
-        h('a', { class: 'btn', href: '#/search' }, '🔍 ค้นหาสินค้า'))),
+        auth.can('move') ? h('a', { class: 'btn primary', title: 'เปิดแผนผังชั้นวาง เพื่อเลือกตำแหน่งว่างแล้วนำสินค้าเข้าจัดเก็บ', href: '#/map' }, '📥 จัดเก็บสินค้า') : null,
+        h('a', { class: 'btn', title: 'ค้นหาว่าสินค้า Lot หรือรหัสตำแหน่งที่ต้องการอยู่ตรงไหนในคลัง และเหลืออยู่เท่าไร', href: '#/search' }, '🔍 ค้นหาสินค้า'))),
     h('div', { class: 'grid g4' },
       kpi('ใช้พื้นที่ไป', `${d.warehouse.usage_pct}%`, `${fmtNum(d.warehouse.occupied)} จาก ${fmtNum(d.warehouse.usable)} ตำแหน่ง`,
         h('div', { class: 'bar' }, h('span', { style: `width:${d.warehouse.usage_pct}%` }))),

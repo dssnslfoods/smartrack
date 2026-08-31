@@ -1,6 +1,6 @@
 // ประวัติการเคลื่อนย้าย — immutable log (แก้ไข/ลบไม่ได้)
-import { api, wh, download } from '../api.js';
-import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=38';
+import { api, wh, download } from '../api.js?v=42';
+import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=42';
 
 export async function historyView() {
   const typeSel = h('select', {}, h('option', { value: '' }, 'ทุกประเภท'),
@@ -40,7 +40,7 @@ export async function historyView() {
       h('div', {}, h('h1', {}, 'ประวัติการเคลื่อนย้าย'),
         h('p', {}, `คลัง: ${wh.label} — ทุกรายการถูกบันทึกถาวร ตรวจสอบย้อนกลับได้ทั้งหมด`)),
       h('div', { class: 'actions' },
-        h('button', { class: 'btn', onclick: () => download('/api/export/movements.csv', { type: typeSel.value, q: q.value, from: from.value, to: to.value, warehouse_id: wh.id }) }, '⬇️ ดาวน์โหลด CSV'))),
+        h('button', { class: 'btn', title: 'ดาวน์โหลดรายการตามเงื่อนไขที่กรองไว้เป็นไฟล์ CSV ไว้เปิดใน Excel หรือส่งให้ผู้ตรวจสอบ', onclick: () => download('/api/export/movements.csv', { type: typeSel.value, q: q.value, from: from.value, to: to.value, warehouse_id: wh.id }) }, '⬇️ ดาวน์โหลด CSV'))),
     h('div', { class: 'card' },
       h('div', { class: 'row' },
         h('div', {}, h('label', {}, 'ประเภท'), typeSel),

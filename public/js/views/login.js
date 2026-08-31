@@ -1,5 +1,5 @@
-import { api, auth } from '../api.js';
-import { h, field, toast } from '../ui.js?v=38';
+import { api, auth } from '../api.js?v=42';
+import { h, field, toast } from '../ui.js?v=42';
 
 export function loginView() {
   const username = h('input', { placeholder: 'ชื่อผู้ใช้', autocomplete: 'username' });
@@ -25,7 +25,7 @@ export function loginView() {
       h('div', { class: 'login-body' },
         field('ชื่อผู้ใช้', username, null, 'ชื่อผู้ใช้ที่ได้รับจากผู้ดูแลระบบ'),
         field('รหัสผ่าน', password, null, 'รหัสผ่านสำหรับเข้าสู่ระบบ'),
-        h('button', { class: 'btn primary lg', style: 'width:100%', onclick: submit }, 'เข้าสู่ระบบ'),
+        h('button', { class: 'btn primary lg', style: 'width:100%', title: 'ตรวจสอบชื่อผู้ใช้และรหัสผ่านเพื่อเข้าใช้งานระบบ — สิทธิ์ที่เห็นในเมนูขึ้นกับบทบาทของบัญชีที่ใช้', onclick: submit }, 'เข้าสู่ระบบ'),
         h('div', { class: 'demo-users' },
           h('strong', {}, 'บัญชีทดสอบ'), h('br'),
           'admin / admin123 — ผู้ดูแลระบบ', h('br'),

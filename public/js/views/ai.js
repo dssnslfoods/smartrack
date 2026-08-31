@@ -1,7 +1,7 @@
 // ผู้ช่วย AI + หน้าวิเคราะห์เชิงลึก
 // ตัวเลขทั้งหมดมาจาก /api/insights/* (คำนวณล้วน) ส่วนคำแนะนำมาจาก /api/ai/* (ต้องเปิด AI)
-import { api, auth, wh } from '../api.js';
-import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill } from '../ui.js?v=38';
+import { api, auth, wh } from '../api.js?v=42';
+import { h, field, table, pill, toast, fmtNum, fmtDate, pctPill, expiryPill } from '../ui.js?v=42';
 
 const RISK = {
   EXPIRED: { label: 'หมดอายุแล้ว', color: 'red' },
@@ -108,7 +108,7 @@ function briefCard(brief, { title = `📦 ${NONG} สรุปให้` } = {})
 /** ปุ่ม "ให้ AI อธิบาย" — เรียกได้เมื่อเปิด AI เท่านั้น */
 function explainButton(topic, mount, enabled) {
   if (!enabled) return null;
-  const btn = h('button', { class: 'btn', onclick: async () => {
+  const btn = h('button', { class: 'btn', title: 'ให้น้องสต๊อคอ่านตัวเลขในตารางนี้แล้วสรุปเป็นภาษาคนว่าควรทำอะไรก่อน — เป็นคำแนะนำเท่านั้น ไม่แก้ไขข้อมูลใด ๆ', onclick: async () => {
     btn.disabled = true; btn.textContent = '📦 น้องสต๊อคกำลังคิด…';
     try {
       const r = await api.get('/api/ai/explain', { topic, warehouse_id: wh.id });
@@ -139,7 +139,7 @@ export async function copilotView() {
     placeholder: 'พิมพ์คำถามเกี่ยวกับคลังสินค้า เช่น "ครีมทานาคาเหลือกี่กระปุก Lot ไหนใกล้หมดอายุสุด"',
     rows: '2', style: 'resize:vertical;width:100%',
   });
-  const sendBtn = h('button', { class: 'btn primary', style: 'padding:10px 26px', onclick: () => send() }, 'ถาม');
+  const sendBtn = h('button', { class: 'btn primary', style: 'padding:10px 26px', title: 'ส่งคำถามให้น้องสต๊อคไปค้นข้อมูลจริงจากระบบมาตอบ (กด Enter ก็ได้) — ดูข้อมูลได้อย่างเดียว แก้ไขอะไรไม่ได้', onclick: () => send() }, 'ถาม');
 
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -228,6 +228,7 @@ export async function copilotView() {
       h('div', { class: 'row', style: 'flex-wrap:wrap;gap:6px' },
         ...SUGGESTIONS.map((s) =>
           h('button', { class: 'chip', style: 'font-family:inherit;font-weight:500',
+            title: 'กดเพื่อส่งคำถามตัวอย่างนี้ให้น้องสต๊อคทันที โดยไม่ต้องพิมพ์เอง',
             onclick: () => send(s) }, s)))));
 }
 
@@ -240,18 +241,19 @@ export async function insightsView() {
   const body = h('div', {});
 
   const TABS = [
-    { key: 'brief', label: '📋 สรุปภาพรวม', render: renderBrief },
-    { key: 'expiry', label: '⏳ ความเสี่ยงหมดอายุ', render: renderExpiry },
-    { key: 'forecast', label: '📈 พยากรณ์ & สั่งเติม', render: renderForecast },
-    { key: 'slotting', label: '🎯 จัดตำแหน่งใหม่', render: renderSlotting },
-    { key: 'anomaly', label: '🔍 ความผิดปกติ', render: renderAnomaly },
-    { key: 'labor', label: '👥 ภาระงาน', render: renderLabor },
+    { key: 'brief', label: '📋 สรุปภาพรวม', hint: 'รวมเรื่องเร่งด่วนจากทุกมุมไว้หน้าเดียว — เหมาะดูตอนเริ่มงานเช้าว่าวันนี้ควรจัดการอะไรก่อน', render: renderBrief },
+    { key: 'expiry', label: '⏳ ความเสี่ยงหมดอายุ', hint: 'เทียบยอดจ่ายออกจริงกับคิวหยิบ FEFO เพื่อหา Lot ที่จะขายไม่ทันก่อนหมดอายุ', render: renderExpiry },
+    { key: 'forecast', label: '📈 พยากรณ์ & สั่งเติม', hint: 'ประเมินยอดใช้ต่อสัปดาห์และวันที่ของจะหมด เพื่อบอกว่าควรสั่งเติมตัวไหนเท่าไร', render: renderForecast },
+    { key: 'slotting', label: '🎯 จัดตำแหน่งใหม่', hint: 'จัดกลุ่ม ABC ตามความถี่หยิบ แล้วเสนอย้ายของหมุนเร็วมาไว้ตำแหน่งที่หยิบง่ายกว่า', render: renderSlotting },
+    { key: 'anomaly', label: '🔍 ความผิดปกติ', hint: 'ตรวจหาเรื่องน่าสงสัย เช่น นับไม่ตรงซ้ำ แก้ไขถี่ผิดปกติ งานค้าง หรือการข้ามลำดับ FEFO', render: renderAnomaly },
+    { key: 'labor', label: '👥 ภาระงาน', hint: 'ดูว่างานหนักวันไหน ช่วงเวลาใด และควรจัดกะกี่คน พร้อมผลงานรายบุคคล', render: renderLabor },
   ];
   let active = 'brief';
 
   function paint() {
     tabsBox.replaceChildren(...TABS.map((t) =>
       h('button', { class: `chip ${t.key === active ? 'active' : ''}`, style: 'font-family:inherit;font-weight:600',
+        title: t.hint,
         onclick: () => { active = t.key; paint(); } }, t.label)));
     body.replaceChildren(h('div', { class: 'empty-state' }, 'กำลังวิเคราะห์…'));
     TABS.find((t) => t.key === active).render()
@@ -398,7 +400,7 @@ export async function insightsView() {
               ? h('div', {}, x.cold.sku_name, h('div', { class: 'muted', style: 'font-size:12px' }, `หยิบ ${fmtNum(x.cold.pick_count)} ครั้ง`))
               : h('span', { class: 'muted' }, 'ตำแหน่งว่าง')) },
           { label: 'ลดเที่ยวเดิน', value: (x) => `${fmtNum(x.trips_saved_per_month)}/เดือน`, num: true },
-          { label: '', value: (x) => h('a', { class: 'btn ghost', href: '#/docs' }, 'สร้างใบโอน') },
+          { label: '', value: (x) => h('a', { class: 'btn ghost', title: 'ไปหน้าเอกสารคลังเพื่อเปิดใบโอนย้ายตามข้อเสนอนี้ — ต้องกรอกและยืนยันเอง ระบบไม่ย้ายของให้อัตโนมัติ', href: '#/docs' }, 'สร้างใบโอน') },
         ], r.recommendations) : h('div', { class: 'empty-state' }, '✅ ตำแหน่งจัดเก็บเหมาะสมดีแล้ว ไม่มีข้อเสนอย้าย')));
   }
 

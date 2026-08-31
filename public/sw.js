@@ -1,19 +1,19 @@
 // Service Worker — Offline Mode: ค้นหาสินค้า/ดูแผนผังได้แม้เน็ตขัดข้อง
 // เลขเวอร์ชันมีที่เดียวตรงนี้ — ต้องตรงกับ ?v= ใน index.html และ import ของ app.js
-const VERSION = 38;
+const VERSION = 42;
 const SHELL = `rack-shell-v${VERSION}`;
 const DATA = `rack-data-v${VERSION}`;
 // ไฟล์ที่มีเวอร์ชันต่อท้ายต้องแคชด้วย URL ที่มี ?v= ให้ตรงกับที่หน้าเว็บเรียกจริง
 // ไม่งั้นจะแคชไว้เฉย ๆ แต่ไม่มีใครใช้ แล้วยังได้ไฟล์เก่าจาก HTTP cache มาแทน
 const V = (p) => `${p}?v=${VERSION}`;
+// ทุกไฟล์ .js/.css ต้องผ่าน V() ให้หมด — ถ้าลืมไฟล์ไหน ไฟล์นั้นจะค้างเวอร์ชันเก่า
+// ในเบราว์เซอร์ผู้ใช้ได้นานถึง 10 นาที (Firebase ตั้ง max-age=600)
 const SHELL_FILES = [
   '/', '/index.html', V('/css/app.css'),
-  V('/js/app.js'), '/js/api.js', V('/js/ui.js'), '/js/actions.js',
-  '/js/views/login.js', '/js/views/dashboard.js', V('/js/views/search.js'),
-  V('/js/views/pick.js'), V('/js/views/map.js'), '/js/views/history.js', '/js/views/reports.js',
-  '/js/views/layout.js', V('/js/views/settings.js'),
-  V('/js/views/inbound.js'), V('/js/views/outbound.js'), V('/js/views/docs.js'),
-  V('/js/views/expiry.js'), V('/js/views/count.js'), V('/js/views/ai.js'),
+  V('/js/app.js'), V('/js/api.js'), V('/js/ui.js'), V('/js/actions.js'),
+  ...['login', 'dashboard', 'search', 'pick', 'map', 'history', 'reports', 'layout',
+      'settings', 'inbound', 'outbound', 'docs', 'expiry', 'count', 'ai', 'store']
+    .map((n) => V(`/js/views/${n}.js`)),
   '/manifest.webmanifest',
   '/img/deleaf-logo.png', '/img/deleaf-icon.png',
 ];

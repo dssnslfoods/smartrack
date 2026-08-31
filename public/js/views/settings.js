@@ -1,12 +1,22 @@
 // ตั้งค่าระบบ — จัดการโซน ชั้นวาง สินค้า ผู้ใช้งาน (เฉพาะ ADMIN)
-import { api } from '../api.js';
-import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=38';
+import { api } from '../api.js?v=42';
+import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=42';
 
 export async function settingsView() {
   const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users', 'ai'];
   const labels = {
     warehouses: 'คลังสินค้า', zones: 'โซน', rags: 'ชั้นวาง (RACK)',
     skus: 'สินค้า (SKU)', channels: 'ช่องทางขาย', users: 'ผู้ใช้งาน', ai: 'ตั้งค่า AI',
+  };
+  // ตั้งค่าต้องทำไล่จากบนลงล่าง: คลัง → โซน → ชั้นวาง เพราะแต่ละชั้นอิงของก่อนหน้า
+  const tabTips = {
+    warehouses: 'อาคารคลังสินค้าและขนาดผังพื้น — ต้องสร้างคลังก่อน จึงจะสร้างโซนและชั้นวางได้',
+    zones: 'แบ่งพื้นที่ในคลังตามประเภทของ เช่น FG สินค้าสำเร็จรูป · RM วัตถุดิบ · PK บรรจุภัณฑ์ · QR ของกักกัน',
+    rags: 'ชั้นวางแต่ละตัว — ระบุจำนวนชั้นและล็อค แล้วระบบจะสร้างรหัสตำแหน่งให้ครบทุกช่องอัตโนมัติ',
+    skus: 'ข้อมูลสินค้าที่จัดเก็บได้ — รหัส ชื่อ หน่วยนับ อายุสินค้า และบาร์โค้ด',
+    channels: 'ช่องทางขายและเกณฑ์ % อายุคงเหลือขั้นต่ำที่แต่ละช่องทางรับได้ ใช้ตรวจตอนจ่ายออก',
+    users: 'บัญชีผู้ใช้และสิทธิ์การใช้งาน — ADMIN แก้ได้ทุกอย่าง · STAFF รับ-จ่ายของ · VIEWER ดูอย่างเดียว',
+    ai: 'เลือกค่าย AI และใส่ API Key เพื่อเปิดใช้น้องสต๊อค สแกนเอกสาร และการวิเคราะห์เชิงลึก',
   };
   let active = 'warehouses';
 
@@ -15,7 +25,7 @@ export async function settingsView() {
 
   function renderTabs() {
     tabBar.replaceChildren(...tabs.map((t) =>
-      h('button', { class: `tab ${t === active ? 'active' : ''}`, onclick: () => { active = t; renderTabs(); load(); } }, labels[t])));
+      h('button', { class: `tab ${t === active ? 'active' : ''}`, title: tabTips[t], onclick: () => { active = t; renderTabs(); load(); } }, labels[t])));
   }
 
   async function load() {
@@ -36,7 +46,7 @@ export async function settingsView() {
     const rows = await api.get('/api/warehouses');
     content.replaceChildren(
       h('div', { style: 'text-align:right;margin-bottom:12px' },
-        h('button', { class: 'btn primary', onclick: () => warehouseForm() }, '+ เพิ่มคลังสินค้า')),
+        h('button', { class: 'btn primary', title: 'สร้างคลังสินค้าใหม่ พร้อมกำหนดขนาดผังพื้นสำหรับวาง RACK — ต้องมีคลังก่อนจึงจะสร้างโซนได้', onclick: () => warehouseForm() }, '+ เพิ่มคลังสินค้า')),
       table([
         { label: 'รหัส', key: 'wh_code', mono: true },
         { label: 'ชื่อคลัง', key: 'wh_name' },
@@ -49,7 +59,7 @@ export async function settingsView() {
         { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
         { label: '', value: (r) => h('span', {},
             h('a', { class: 'btn ghost', href: `#/layout/${r.warehouse_id}`, title: 'ผังพื้น' }, '🏗️'),
-            h('button', { class: 'btn ghost', onclick: () => warehouseForm(r) }, 'แก้ไข')) },
+            h('button', { class: 'btn ghost', title: 'แก้ไขชื่อ ที่อยู่ ขนาดผังพื้น หรือปิดใช้งานคลังนี้', onclick: () => warehouseForm(r) }, 'แก้ไข')) },
       ], rows));
   }
 
@@ -74,13 +84,14 @@ export async function settingsView() {
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         w ? h('button', {
           class: 'btn danger',
+          title: 'ลบคลังนี้ถาวร — ทำได้เฉพาะเมื่อไม่มีโซนเหลืออยู่ในคลัง และย้อนคืนไม่ได้',
           onclick: async () => {
             if (!(await confirmBox('ลบคลังสินค้า', `ลบคลัง ${w.wh_code}? (ต้องไม่มีโซนเหลืออยู่)`, 'ลบ'))) return;
             try { await api.del(`/api/warehouses/${w.warehouse_id}`); toast('ลบคลังแล้ว'); m.close(); load(); }
             catch (err) { toast(err.message, 'err'); }
           },
         }, '🗑 ลบ') : null,
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกข้อมูลคลังสินค้า — ขนาดผังพื้นที่ตั้งไว้จะใช้เป็นพื้นที่วาง RACK ในหน้าผังพื้น', onclick: async () => {
           try {
             const body = {
               wh_code: code.value.trim(), wh_name: name.value.trim(), address: addr.value.trim() || null,
@@ -99,7 +110,7 @@ export async function settingsView() {
     const rows = await api.get('/api/zones');
     content.replaceChildren(
       h('div', { style: 'text-align:right;margin-bottom:12px' },
-        h('button', { class: 'btn primary', onclick: () => zoneForm() }, '+ เพิ่มโซน')),
+        h('button', { class: 'btn primary', title: 'สร้างโซนใหม่ในคลัง เช่น FG สินค้าสำเร็จรูป หรือ RM วัตถุดิบ — ต้องมีโซนก่อนจึงจะสร้าง RACK ได้', onclick: () => zoneForm() }, '+ เพิ่มโซน')),
       table([
         { label: 'สี', value: (r) => h('i', { class: 'dot', style: `background:${r.color || '#2563eb'}` }) },
         { label: 'รหัส', key: 'zone_code', mono: true },
@@ -107,7 +118,7 @@ export async function settingsView() {
         { label: 'คลังสินค้า', value: (r) => (r.wh_code ? `${r.wh_code} — ${r.wh_name}` : '—') },
         { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
         { label: 'RACK', key: 'rag_count', num: true },
-        { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => zoneForm(r) }, 'แก้ไข') },
+        { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'แก้ไขชื่อโซน คลังที่สังกัด สีบนแผนผัง หรือปิดใช้งานโซนนี้', onclick: () => zoneForm(r) }, 'แก้ไข') },
       ], rows));
   }
 
@@ -132,13 +143,14 @@ export async function settingsView() {
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
         z && !z.rag_count ? h('button', {
           class: 'btn danger',
+          title: 'ลบโซนนี้ถาวร — ปุ่มจะแสดงเฉพาะเมื่อไม่มี RACK เหลืออยู่ในโซน และย้อนคืนไม่ได้',
           onclick: async () => {
             if (!(await confirmBox('ลบโซน', `ลบโซน ${z.zone_code}?`, 'ลบ'))) return;
             try { await api.del(`/api/zones/${z.zone_id}`); toast('ลบโซนแล้ว'); m.close(); load(); }
             catch (err) { toast(err.message, 'err'); }
           },
         }, '🗑 ลบ') : null,
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกข้อมูลโซน — โซนใหม่จะพร้อมให้เลือกทันทีตอนสร้าง RACK', onclick: async () => {
           try {
             const body = {
               zone_code: code.value.trim(), zone_name: name.value.trim(),
@@ -157,7 +169,7 @@ export async function settingsView() {
     const rows = await api.get('/api/rags');
     content.replaceChildren(
       h('div', { style: 'text-align:right;margin-bottom:12px' },
-        h('button', { class: 'btn primary', onclick: () => ragForm() }, '+ เพิ่มชั้นวาง')),
+        h('button', { class: 'btn primary', title: 'สร้างชั้นวาง (RACK) ใหม่ — ระบบจะสร้างตำแหน่งจัดเก็บทุกช่องให้อัตโนมัติตามจำนวนชั้น × จำนวนล็อคที่กรอก', onclick: () => ragForm() }, '+ เพิ่มชั้นวาง')),
       table([
         { label: 'หมายเลข', key: 'rag_no', mono: true },
         { label: 'คลังสินค้า', value: (r) => r.wh_code ?? '—' },
@@ -168,8 +180,8 @@ export async function settingsView() {
         { label: 'ใช้งาน', key: 'occupied', num: true },
         { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
         { label: '', value: (r) => h('span', {},
-            h('a', { class: 'btn ghost', href: `#/map/${r.rag_id}` }, '🗺️'),
-            h('button', { class: 'btn ghost', onclick: () => ragForm(r) }, 'แก้ไข')) },
+            h('a', { class: 'btn ghost', href: `#/map/${r.rag_id}`, title: 'เปิดแผนผังชั้นวางนี้ เพื่อดูว่าตำแหน่งไหนว่าง มีสินค้า หรือใกล้หมดอายุ' }, '🗺️'),
+            h('button', { class: 'btn ghost', title: 'แก้ไขหมายเลข โซน จำนวนชั้น/ล็อค ของ RACK นี้ — การเพิ่มจำนวนจะสร้างตำแหน่งใหม่เพิ่มให้', onclick: () => ragForm(r) }, 'แก้ไข')) },
       ], rows));
   }
 
@@ -194,7 +206,7 @@ export async function settingsView() {
         status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกชั้นวาง — ระบบจะสร้างรหัสตำแหน่งจัดเก็บทุกช่องให้อัตโนมัติ (จำนวนล็อคต้องเป็นเลขคู่)', onclick: async () => {
           try {
             const body = {
               rag_no: no.value.trim(), zone_id: Number(zoneSel.value),
@@ -215,7 +227,7 @@ export async function settingsView() {
     const rows = await api.get('/api/skus');
     content.replaceChildren(
       h('div', { style: 'text-align:right;margin-bottom:12px' },
-        h('button', { class: 'btn primary', onclick: () => skuForm() }, '+ เพิ่มสินค้า')),
+        h('button', { class: 'btn primary', title: 'สร้างรายการสินค้า (SKU) ใหม่ — ต้องมี SKU ก่อนจึงจะรับสินค้าเข้าคลังได้', onclick: () => skuForm() }, '+ เพิ่มสินค้า')),
       table([
         { label: 'รหัส', key: 'sku_code', mono: true },
         { label: 'ชื่อสินค้า', key: 'sku_name' },
@@ -227,7 +239,7 @@ export async function settingsView() {
         { label: 'จัดเก็บอยู่', value: (r) => `${r.locations_used} ตำแหน่ง`, num: true },
         { label: 'ยอดรวม', value: (r) => fmtNum(r.qty_in_stock), num: true },
         { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
-        { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => skuForm(r) }, 'แก้ไข') },
+        { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'แก้ไขชื่อ หมวดหมู่ บาร์โค้ด อายุสินค้า และหน่วยนับของ SKU นี้', onclick: () => skuForm(r) }, 'แก้ไข') },
       ], rows));
   }
 
@@ -268,7 +280,7 @@ export async function settingsView() {
       unitRows.push(row);
       unitsBox.append(h('div', { class: 'row', style: 'align-items:center;gap:8px;margin-bottom:6px' },
         h('span', {}, '1'), uname, h('span', {}, '='), factor, h('span', { class: 'muted' }, unit.value || 'หน่วยฐาน'),
-        h('button', { class: 'btn ghost', onclick: (e) => { unitRows.splice(unitRows.indexOf(row), 1); e.target.closest('.row').remove(); } }, '🗑️')));
+        h('button', { class: 'btn ghost', title: 'ลบหน่วยนับแถวนี้ออกจากรายการ — จะมีผลจริงเมื่อกดบันทึกสินค้า', onclick: (e) => { unitRows.splice(unitRows.indexOf(row), 1); e.target.closest('.row').remove(); } }, '🗑️')));
     }
     if (s) api.get(`/api/skus/${s.sku_id}/units`).then((units) => units.forEach(addUnitRow)).catch(() => {});
 
@@ -281,11 +293,11 @@ export async function settingsView() {
         h('div', { class: 'field' },
           h('label', {}, 'หน่วยนับเพิ่มเติม (เช่น ลัง / โหล)'),
           unitsBox,
-          h('button', { class: 'btn ghost', onclick: () => addUnitRow() }, '+ เพิ่มหน่วย')),
+          h('button', { class: 'btn ghost', title: 'เพิ่มหน่วยนับใหญ่ เช่น 1 ลัง = 12 ชิ้น เพื่อให้กรอกจำนวนตอนรับ-จ่ายเป็นลังได้', onclick: () => addUnitRow() }, '+ เพิ่มหน่วย')),
         status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกข้อมูลสินค้าพร้อมหน่วยนับเพิ่มเติมทั้งหมด — SKU นี้จะพร้อมใช้ในหน้ารับเข้าและจ่ายออกทันที', onclick: async () => {
           try {
             const body = {
               sku_code: code.value.trim(), sku_name: name.value.trim(),
@@ -317,20 +329,20 @@ export async function settingsView() {
         h('div', { class: 'row', style: 'align-items:flex-end;flex-wrap:wrap' },
           field('ย้ายเข้าโปรโมชันเมื่ออายุต่ำกว่า (เดือน)', moveM, null, 'เมื่อสินค้าเหลืออายุน้อยกว่ากี่เดือน ระบบจะแนะนำให้ย้ายเข้าช่องทางลดราคา/โปรโมชัน'),
           field('ตัดออกจากระบบเมื่ออายุต่ำกว่า (เดือน)', cutM, null, 'เมื่อสินค้าเหลืออายุน้อยกว่ากี่เดือน ระบบจะแนะนำให้ตัดออก (scrap) เพราะขายไม่ทันแล้ว'),
-          h('button', { class: 'btn primary', onclick: async () => {
+          h('button', { class: 'btn primary', title: 'บันทึกเกณฑ์อายุสินค้า — มีผลกับการเตือนย้ายเข้าโปรโมชันและตัดออกในหน้าอายุสินค้าทั้งระบบ', onclick: async () => {
             try {
               await api.put('/api/settings', { expiry_move_months: moveM.value, expiry_cutoff_months: cutM.value });
               toast('บันทึกเกณฑ์แล้ว');
             } catch (err) { toast(err.message, 'err'); }
           } }, 'บันทึกเกณฑ์'))),
       h('div', { style: 'text-align:right;margin-bottom:12px' },
-        h('button', { class: 'btn primary', onclick: () => channelForm() }, '+ เพิ่มช่องทาง')),
+        h('button', { class: 'btn primary', title: 'สร้างช่องทางขายใหม่ เช่น MT / GT / ONLINE พร้อมกำหนด % อายุคงเหลือขั้นต่ำที่ลูกค้ากลุ่มนั้นรับได้', onclick: () => channelForm() }, '+ เพิ่มช่องทาง')),
       table([
         { label: 'รหัส', key: 'channel_code', mono: true },
         { label: 'ชื่อช่องทาง', key: 'channel_name' },
         { label: '% อายุคงเหลือขั้นต่ำ', value: (r) => (r.min_pct_remaining === null ? 'ไม่จำกัด' : `≥ ${r.min_pct_remaining}%`), num: true },
         { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
-        { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => channelForm(r) }, 'แก้ไข') },
+        { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'แก้ไขชื่อช่องทางหรือ % อายุคงเหลือขั้นต่ำ — มีผลกับการตรวจตอนจ่ายออกครั้งถัดไป', onclick: () => channelForm(r) }, 'แก้ไข') },
       ], channels));
   }
 
@@ -348,7 +360,7 @@ export async function settingsView() {
         status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกช่องทางขาย — เกณฑ์ % อายุคงเหลือจะถูกใช้ตรวจสอบทุกครั้งที่จ่ายสินค้าให้ช่องทางนี้', onclick: async () => {
           try {
             const body = {
               channel_code: code.value, channel_name: name.value,
@@ -367,13 +379,13 @@ export async function settingsView() {
     const rows = await api.get('/api/users');
     content.replaceChildren(
       h('div', { style: 'text-align:right;margin-bottom:12px' },
-        h('button', { class: 'btn primary', onclick: () => userForm() }, '+ เพิ่มผู้ใช้งาน')),
+        h('button', { class: 'btn primary', title: 'สร้างบัญชีผู้ใช้ใหม่ พร้อมกำหนดรหัสผ่านและบทบาท (ADMIN / STAFF / VIEWER)', onclick: () => userForm() }, '+ เพิ่มผู้ใช้งาน')),
       table([
         { label: 'ชื่อผู้ใช้', key: 'username', mono: true },
         { label: 'ชื่อ-นามสกุล', key: 'full_name' },
         { label: 'บทบาท', value: (r) => pill(ROLE_LABEL[r.role] ?? r.role, r.role === 'ADMIN' ? 'blue' : r.role === 'STAFF' ? 'green' : 'gray') },
         { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
-        { label: '', value: (r) => h('button', { class: 'btn ghost', onclick: () => userForm(r) }, 'แก้ไข') },
+        { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'แก้ไขชื่อ บทบาท รีเซ็ตรหัสผ่าน หรือปิดใช้งานบัญชีนี้ (ชื่อผู้ใช้เปลี่ยนไม่ได้)', onclick: () => userForm(r) }, 'แก้ไข') },
       ], rows));
   }
 
@@ -396,7 +408,7 @@ export async function settingsView() {
         status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกบัญชีผู้ใช้ — สิทธิ์ใหม่จะมีผลเมื่อผู้ใช้เข้าสู่ระบบครั้งถัดไป', onclick: async () => {
           try {
             const body = {
               username: username.value.trim(), full_name: fullname.value.trim(),
@@ -450,7 +462,7 @@ export async function settingsView() {
 
     // --- API Key ---
     const keyInput = h('input', { type: 'password', value: '', placeholder: s.has_key ? '(ไม่แสดง — ใส่ค่าใหม่เพื่อเปลี่ยน)' : 'วาง API Key ที่นี่', style: 'flex:1' });
-    const showBtn = h('button', { class: 'btn ghost', type: 'button', onclick: () => {
+    const showBtn = h('button', { class: 'btn ghost', type: 'button', title: 'สลับแสดง/ซ่อนตัวอักษรของ API Key ที่พิมพ์ไว้ เพื่อตรวจว่าวางถูกต้องก่อนบันทึก', onclick: () => {
       const t = keyInput.type === 'password' ? 'text' : 'password';
       keyInput.type = t;
       showBtn.textContent = t === 'password' ? 'แสดง' : 'ซ่อน';
@@ -481,6 +493,7 @@ export async function settingsView() {
 
     const loadModelsBtn = h('button', {
       class: 'btn ghost', type: 'button', style: 'font-size:12px',
+      title: 'ดึงรายชื่อรุ่น AI ที่ API Key นี้ใช้ได้จริงจากผู้ให้บริการ แล้วเตือนถ้ารุ่นที่ตั้งไว้ถูกยกเลิกแล้ว',
       onclick: async () => {
         loadModelsBtn.disabled = true;
         modelNote.textContent = 'กำลังดึงรายชื่อรุ่น…';
@@ -514,7 +527,7 @@ export async function settingsView() {
     // --- Test & Save ---
     const testResult = h('div', { style: 'margin-top:8px;font-size:13px' });
 
-    const testBtn = h('button', { class: 'btn', onclick: async () => {
+    const testBtn = h('button', { class: 'btn', title: 'ลองเรียก AI ด้วย API Key ที่ใส่ไว้ เพื่อดูว่าเชื่อมต่อได้จริงก่อนบันทึก (ไม่บันทึกค่าใด ๆ)', onclick: async () => {
       const key = keyInput.value.trim();
       if (!key && !s.has_key) { toast('กรุณาใส่ API Key ก่อนทดสอบ', 'err'); return; }
       testResult.textContent = 'กำลังทดสอบ…';
@@ -536,7 +549,7 @@ export async function settingsView() {
       testBtn.disabled = false;
     } }, 'ทดสอบการเชื่อมต่อ');
 
-    const saveBtn = h('button', { class: 'btn primary', onclick: async () => {
+    const saveBtn = h('button', { class: 'btn primary', title: 'บันทึกค่าย AI, API Key และรุ่นที่เลือก — ฟีเจอร์ AI ทั้งระบบจะเริ่มใช้ค่าใหม่นี้ทันที', onclick: async () => {
       saveBtn.disabled = true;
       try {
         const body = { provider: selectedProvider, model_smart: modelSmart.value.trim(), model_fast: modelFast.value.trim() };
@@ -549,7 +562,7 @@ export async function settingsView() {
       saveBtn.disabled = false;
     } }, 'บันทึก');
 
-    const clearBtn = s.has_key ? h('button', { class: 'btn danger', onclick: async () => {
+    const clearBtn = s.has_key ? h('button', { class: 'btn danger', title: 'ลบ API Key ออกจากระบบ — ฟีเจอร์ AI ทั้งหมดจะหยุดทำงานจนกว่าจะใส่ Key ใหม่ (ตัวเลขและรายงานปกติยังใช้ได้)', onclick: async () => {
       try {
         await api.put('/api/settings/ai', { api_key: '' });
         toast('ลบ API Key แล้ว');
