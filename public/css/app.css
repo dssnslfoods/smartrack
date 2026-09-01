@@ -224,6 +224,30 @@ tbody tr:hover { background: #f8fafc; }
 /* ปุ่มที่ยังกดไม่ได้เพราะรอข้อมูลอย่างอื่นก่อน — จางลงแต่ยังกดได้ เพื่อให้ขึ้นคำอธิบายว่าต้องทำอะไรก่อน */
 .btn.is-waiting { opacity: .5; }
 
+/* ---------- ใบสั่งหยิบ (SO) ที่มีได้หลายสินค้า ---------- */
+.so-sum {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; border-radius: 8px; background: #f1f5f9; margin-bottom: 12px; font-size: 13.5px;
+}
+.so-item { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; background: #fff; }
+.so-item:last-child { margin-bottom: 0; }
+.so-item-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.so-item-head > div:first-child { flex: 1; min-width: 160px; }
+
+/* ตัวเลือกตำแหน่งหยิบ — ต้องกว้างกว่า modal ปกติเพราะเป็นตารางหลายคอลัมน์ */
+.modal:has(.loc-editor) { width: min(1040px, 100%); }
+.loc-editor table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.loc-editor th, .loc-editor td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+.loc-editor thead th { position: sticky; top: 0; background: #f1f5f9; z-index: 1; font-size: 12px; }
+.loc-editor tr.off-rule { background: #fffbeb; }
+.loc-editor tr.hit { background: #d1fae5; transition: background .4s; }
+.loc-editor input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--brand); }
+.loc-total {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px;
+  border-top: 2px solid var(--line); font-size: 14px;
+}
+.loc-total b { font-size: 20px; color: var(--brand); font-variant-numeric: tabular-nums; }
+
 /* ---------- ตารางรูปที่ถ่ายไว้ของตำแหน่งเดียวกัน (เลือกรูปแล้วรวมยอด) ---------- */
 .shots { border: 1px solid #cdeae6; background: #f7fdfc; border-radius: 10px; padding: 12px; margin-top: 12px; }
 .shots-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #0f766e; margin-bottom: 10px; flex-wrap: wrap; }

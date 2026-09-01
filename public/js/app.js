@@ -1,21 +1,21 @@
 // โครงหลักของแอป: เมนู · ช่องค้นหาด้านบน · การสลับหน้า
-import { api, auth, wh } from './api.js?v=45';
-import { h, $ } from './ui.js?v=45';
-import { loginView } from './views/login.js?v=45';
-import { dashboardView } from './views/dashboard.js?v=45';
-import { searchView } from './views/search.js?v=45';
-import { pickView } from './views/pick.js?v=45';
-import { overviewView, rackView } from './views/map.js?v=45';
-import { historyView } from './views/history.js?v=45';
-import { settingsView } from './views/settings.js?v=45';
-import { reportsView } from './views/reports.js?v=45';
-import { warehouseListView, warehouseLayoutView } from './views/layout.js?v=45';
-import { inboundView } from './views/inbound.js?v=45';
-import { outboundView } from './views/outbound.js?v=45';
-import { docsView } from './views/docs.js?v=45';
-import { expiryView } from './views/expiry.js?v=45';
-import { countView } from './views/count.js?v=45';
-import { copilotView, insightsView } from './views/ai.js?v=45';
+import { api, auth, wh } from './api.js?v=47';
+import { h, $ } from './ui.js?v=47';
+import { loginView } from './views/login.js?v=47';
+import { dashboardView } from './views/dashboard.js?v=47';
+import { searchView } from './views/search.js?v=47';
+import { pickView } from './views/pick.js?v=47';
+import { overviewView, rackView } from './views/map.js?v=47';
+import { historyView } from './views/history.js?v=47';
+import { settingsView } from './views/settings.js?v=47';
+import { reportsView } from './views/reports.js?v=47';
+import { warehouseListView, warehouseLayoutView } from './views/layout.js?v=47';
+import { inboundView } from './views/inbound.js?v=47';
+import { outboundView } from './views/outbound.js?v=47';
+import { docsView } from './views/docs.js?v=47';
+import { expiryView } from './views/expiry.js?v=47';
+import { countView } from './views/count.js?v=47';
+import { copilotView, insightsView } from './views/ai.js?v=47';
 
 const NAV = [
   { path: '#/', icon: '🏠', label: 'หน้าแรก', tip: 'ภาพรวมคลังวันนี้ — พื้นที่ที่ใช้ไป ของใกล้หมดอายุ และงานที่ค้างอยู่' },

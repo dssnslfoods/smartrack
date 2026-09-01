@@ -1,6 +1,6 @@
 // สินค้าที่ต้องจัดการ — กฎอายุคงเหลือรายช่องทาง + คำแนะนำ (ย้ายเข้าโปรโมชัน/ตัดออก) + Recall ราย Lot
-import { api, wh } from '../api.js?v=45';
-import { h, field, table, pill, toast, fmtNum, fmtDate, fmtDateTime, pctPill, ACTION_LABEL, ACTION_COLOR, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=45';
+import { api, wh } from '../api.js?v=47';
+import { h, field, table, pill, toast, fmtNum, fmtDate, fmtDateTime, pctPill, ACTION_LABEL, ACTION_COLOR, MOVE_LABEL, MOVE_COLOR } from '../ui.js?v=47';
 
 export async function expiryView({ params }) {
   const tab = params.get('tab') ?? 'actions';

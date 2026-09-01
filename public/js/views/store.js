@@ -1,6 +1,6 @@
 // จัดเก็บสินค้าเข้าตำแหน่งว่าง
-import { api } from '../api.js?v=45';
-import { h, field, toast, scanInput, fmtNum } from '../ui.js?v=45';
+import { api } from '../api.js?v=47';
+import { h, field, toast, scanInput, fmtNum } from '../ui.js?v=47';
 
 export async function storeView() {
   const [skus, zones] = await Promise.all([api.get('/api/skus'), api.get('/api/zones')]);

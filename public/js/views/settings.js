@@ -1,6 +1,6 @@
 // ตั้งค่าระบบ — จัดการโซน ชั้นวาง สินค้า ผู้ใช้งาน (เฉพาะ ADMIN)
-import { api } from '../api.js?v=45';
-import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=45';
+import { api } from '../api.js?v=47';
+import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=47';
 
 export async function settingsView() {
   const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users', 'ai'];
