@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>ใบจัดเตรียมสินค้า (ตัวอย่างทดสอบ)</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  html { background: #fff; }
+  body {
+    font-family: "Sarabun", "Noto Sans Thai", "Thonburi", "Helvetica Neue", sans-serif;
+    font-size: 12px; color: #111; background: #fff; margin: 0; line-height: 1.45;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .stamp {
+    border: 2px dashed #b91c1c; color: #b91c1c; font-weight: 700; text-align: center;
+    padding: 6px; margin-bottom: 12px; letter-spacing: .5px; font-size: 12.5px;
+  }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+  .co-name { font-size: 17px; font-weight: 800; }
+  .co small { display: block; color: #444; font-size: 11px; }
+  .doc-title { font-size: 19px; font-weight: 800; text-align: right; letter-spacing: .5px; }
+  .barcode { text-align: right; font-family: "Libre Barcode 128", monospace; }
+  .meta { margin-top: 6px; font-size: 11.5px; text-align: right; }
+  .meta b { display: inline-block; min-width: 90px; text-align: left; }
+  hr { border: 0; border-top: 2px solid #111; margin: 10px 0; }
+  .info { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; margin: 10px 0 14px; font-size: 12px; }
+  .info b { display: inline-block; min-width: 82px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th, td { border: 1px solid #666; padding: 5px 6px; vertical-align: top; }
+  th { background: #e8e8e8; font-size: 11px; text-align: center; }
+  td.c { text-align: center; }
+  td.r { text-align: right; }
+  .code { font-family: "SF Mono", Menlo, monospace; font-size: 10.5px; }
+  tfoot td { font-weight: 700; background: #f3f4f6; }
+  .foot { display: flex; justify-content: space-between; margin-top: 26px; gap: 30px; }
+  .sign { flex: 1; text-align: center; font-size: 11px; }
+  .sign .line { border-bottom: 1px dotted #333; height: 34px; margin-bottom: 4px; }
+  .note { margin-top: 12px; font-size: 11px; color: #333; }
+  .handwrite { font-family: "Comic Sans MS", cursive; color: #1d4ed8; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="stamp">
+  ★ เอกสารตัวอย่างสำหรับทดสอบระบบเท่านั้น — ไม่ใช่เอกสารทางการค้าจริง · SPECIMEN FOR SYSTEM TESTING ONLY ★
+</div>
+
+<div class="head">
+  <div class="co">
+    <div class="co-name">บริษัท ตัวอย่างจัดจำหน่าย จำกัด (สมมติ)</div>
+    <small>สำนักงานใหญ่ — เลขที่ 88/8 ถนนทดสอบ แขวงตัวอย่าง เขตสมมติ กรุงเทพฯ 10900</small>
+    <small>โทร. 02-000-0000 · อีเมล info@testsample.example</small>
+  </div>
+  <div>
+    <div class="doc-title">ใบจัดเตรียมสินค้า (ต้นฉบับ)</div>
+    <div class="barcode">SO-6909-TEST07</div>
+    <div class="meta">
+      <div><b>เลขที่</b> SO-6909-TEST07</div>
+      <div><b>วันที่</b> 1 กันยายน 2569</div>
+      <div><b>ผู้สร้างรายการ</b> ฝ่ายขาย</div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<div class="info">
+  <div><b>ลูกค้า:</b> ร้านความงามทดสอบ (TB00099)</div>
+  <div><b>ผู้ที่อยู่จัดส่ง:</b> คุณสมหญิง ทดสอบระบบ</div>
+  <div><b>ที่อยู่:</b> 25 ถนนสมมติ ตำบลทดลอง อำเภอตัวอย่าง จังหวัดปทุมธานี 12000</div>
+  <div><b>โทรศัพท์:</b> 08X-XXX-XXXX</div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:26px">#</th>
+      <th style="width:96px">รหัสสินค้า</th>
+      <th>ชื่อสินค้า</th>
+      <th style="width:80px">จำนวน</th>
+      <th style="width:150px">หมายเหตุ / Lot (เขียนมือ)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="c">1</td>
+      <td class="code">BTW-1001</td>
+      <td>สบู่ทานาคา 100 กรัม แพ็ค 12</td>
+      <td class="r">720</td>
+      <td class="handwrite">Lot 2569-142 ok</td>
+    </tr>
+    <tr>
+      <td class="c">2</td>
+      <td class="code">CRM-2003</td>
+      <td>ครีมทานาคาบำรุงผิว 100 กรัม (ปกติ)</td>
+      <td class="r">480</td>
+      <td class="handwrite">เช็คแล้ว 1/9</td>
+    </tr>
+    <tr>
+      <td class="c">3</td>
+      <td class="code">SRM-3050</td>
+      <td>เซรั่มวิตามินซี ขนาด 30ml</td>
+      <td class="r">1,200</td>
+      <td class="handwrite">พร้อมส่ง</td>
+    </tr>
+    <tr>
+      <td class="c">4</td>
+      <td class="code">LTN-4020</td>
+      <td>โลชั่นบำรุงผิวกาย 200 มล.</td>
+      <td class="r">360</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="c">5</td>
+      <td class="code">SHP-5030</td>
+      <td>แชมพูสระผมสมุนไพร 300 มล.</td>
+      <td class="r">240</td>
+      <td class="handwrite">งดขวดแตก</td>
+    </tr>
+    <tr>
+      <td class="c">6</td>
+      <td class="code">CLY-6010</td>
+      <td>สบู่ล้างหน้าโคลนทานาคา 100 กรัม</td>
+      <td class="r">540</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td class="c">7</td>
+      <td class="code">GEL-7099</td>
+      <td>เจลล้างหน้าทานาคา 150 มล. (สินค้าใหม่)</td>
+      <td class="r">96</td>
+      <td class="handwrite">เทสเตอร์</td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr><td colspan="3" class="c">รวมทั้งสิ้น</td><td class="r">3,636</td><td></td></tr>
+  </tfoot>
+</table>
+
+<div class="note">
+  <b>หมายเหตุ:</b> รายการที่ 7 เป็นสินค้าใหม่/เทสเตอร์ ยังไม่มีรหัสในระบบหลัก กรุณาตรวจสอบก่อนจัดส่ง —
+  โปรดจัดตามลำดับ FEFO ตามมาตรฐาน
+</div>
+
+<div class="foot">
+  <div class="sign"><div class="line"></div>ผู้จัดเตรียมสินค้า / วันที่</div>
+  <div class="sign"><div class="line"></div>ผู้ตรวจสอบ / วันที่</div>
+  <div class="sign"><div class="line"></div>ผู้อนุมัติจัดส่ง / วันที่</div>
+</div>
+
+</body>
+</html>
