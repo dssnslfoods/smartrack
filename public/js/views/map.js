@@ -1,7 +1,7 @@
 // แผนผังคลัง — ผังพื้นคลังเลือก RACK + แผนผัง RACK รายตัว (ชั้น × ความลึก) + จัดเก็บสินค้า
-import { api, auth, wh, openLabels } from '../api.js?v=50';
-import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table } from '../ui.js?v=50';
-import { itemActions } from '../actions.js?v=50';
+import { api, auth, wh, openLabels } from '../api.js?v=51';
+import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table , rackSize} from '../ui.js?v=51';
+import { itemActions } from '../actions.js?v=51';
 
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
 
@@ -381,7 +381,7 @@ export async function rackView({ match, params }) {
     h('div', { class: 'page-head' },
       h('div', {},
         h('h1', {}, `RACK ${rag.zone_code}-${rag.rag_no}`),
-        h('p', {}, `${rag.zone_name} · ${rag.total_levels} ชั้น × ${rag.total_depths / 2} ล็อค (${rag.total_depths} ตอน)`)),
+        h('p', {}, `${rag.zone_name} · ${rackSize(rag.total_levels, rag.total_depths)}`)),
       h('div', { class: 'actions' },
         pill(`ใช้พื้นที่ ${stats.usage_pct}%`, stats.usage_pct >= 90 ? 'red' : 'blue'),
         pill(`ว่าง ${stats.empty}`, 'green'),

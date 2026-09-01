@@ -126,6 +126,16 @@ export function packBreakdown(qty, pack, baseUnit = '') {
     : `${fmtNum(boxes)} ${pack.unit_name}`;
 }
 
+/**
+ * ขนาดชั้นวางเป็นข้อความ
+ * จำนวนตอนเป็นเลขคี่ได้ — ชั้นวางจริงบางตัวลึกไม่เท่ากัน (ในระบบมี 5 ตอนอยู่หลายตัว)
+ * จึงบอกเป็นล็อคเฉพาะตอนที่หารสองลงตัว ไม่งั้นจะได้ "2.5 ล็อค" ซึ่งไม่มีอยู่จริง
+ */
+export const rackSize = (levels, depths) =>
+  (Number(depths) % 2 === 0
+    ? `${levels} ชั้น × ${depths / 2} ล็อค (${depths} ตอน)`
+    : `${levels} ชั้น × ${depths} ตอน`);
+
 /** หน่วยลังที่ใหญ่ที่สุดของสินค้า — ใช้เป็นตัวหลักในการแตกจำนวน */
 export const biggestPack = (units) =>
   (units ?? []).filter((u) => Number(u.factor) > 1).sort((a, b) => b.factor - a.factor)[0] ?? null;

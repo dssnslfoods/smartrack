@@ -1,6 +1,6 @@
 // ตั้งค่าระบบ — จัดการโซน ชั้นวาง สินค้า ผู้ใช้งาน (เฉพาะ ADMIN)
-import { api } from '../api.js?v=50';
-import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=50';
+import { api } from '../api.js?v=51';
+import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=51';
 
 export async function settingsView() {
   const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users', 'ai'];
@@ -214,7 +214,7 @@ export async function settingsView() {
       ...zones.map((z) => h('option', { value: z.zone_id, selected: z.zone_id === r?.zone_id },
         `${z.wh_code ? `[${z.wh_code}] ` : ''}${z.zone_code} — ${z.zone_name}`)));
     const lvl = h('input', { type: 'number', min: '1', max: '20', value: String(r?.total_levels ?? 4) });
-    const dep = h('input', { type: 'number', min: '2', max: '20', step: '2', value: String(r?.total_depths ?? 2) });
+    const dep = h('input', { type: 'number', min: '1', max: '30', value: String(r?.total_depths ?? 6) });
     const nt = h('input', { value: r?.note ?? '' });
     const status = r ? h('select', {},
       h('option', { value: 'ACTIVE', selected: r.status === 'ACTIVE' }, 'ใช้งาน'),
@@ -223,19 +223,18 @@ export async function settingsView() {
     const m = modal(r ? 'แก้ไขชั้นวาง' : 'เพิ่มชั้นวางใหม่',
       h('div', {},
         h('div', { class: 'grid g2' }, field('หมายเลข RACK', no, null, 'หมายเลขชั้นวาง เช่น A01, B02 ใช้สร้างรหัสตำแหน่ง'), field('โซน', zoneSel, null, 'RACK นี้อยู่ในโซนไหน')),
-        h('div', { class: 'grid g2' }, field('จำนวนชั้น', lvl, null, 'จำนวนชั้นของ RACK (นับจากล่างขึ้นบน) เช่น 4 = L1 ถึง L4'), field('จำนวนล็อค (แนวกว้าง)', dep, null, 'จำนวนล็อคแนวกว้าง (ต้องเป็นเลขคู่) แต่ละล็อคเป็น 1 ตำแหน่งจัดเก็บ')),
+        h('div', { class: 'grid g2' }, field('จำนวนชั้น', lvl, null, 'จำนวนชั้นของ RACK (นับจากล่างขึ้นบน) เช่น 4 = L1 ถึง L4'), field('จำนวนตอน (แนวลึก)', dep, null, 'ความลึกของชั้นวาง — D1 คือหน้าสุด เข้าถึงได้โดยตรง · เป็นเลขคี่ได้ ไม่บังคับเลขคู่')),
         field('หมายเหตุ', nt, null, 'บันทึกเพิ่มเติมเกี่ยวกับ RACK นี้ เช่น ความสูง น้ำหนักที่รับได้'),
         status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
-        h('button', { class: 'btn primary', title: 'บันทึกชั้นวาง — ระบบจะสร้างรหัสตำแหน่งจัดเก็บทุกช่องให้อัตโนมัติ (จำนวนล็อคต้องเป็นเลขคู่)', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกชั้นวาง — ระบบจะสร้างรหัสตำแหน่งจัดเก็บทุกช่องให้อัตโนมัติ (จำนวนชั้น × จำนวนตอน)', onclick: async () => {
           try {
             const body = {
               rag_no: no.value.trim(), zone_id: Number(zoneSel.value),
               total_levels: Number(lvl.value), total_depths: Number(dep.value),
               note: nt.value.trim() || null, ...(status ? { status: status.value } : {}),
             };
-            if (body.total_depths % 2 !== 0) throw new Error('จำนวนล็อคต้องเป็นเลขคู่');
             const res = r ? await api.put(`/api/rags/${r.rag_id}`, body) : await api.post('/api/rags', body);
             toast(r ? 'อัปเดตชั้นวางแล้ว' : `เพิ่มชั้นวางเรียบร้อย (${res.total ?? res.created} ตำแหน่ง)`);
             m.close(); load();

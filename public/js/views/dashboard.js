@@ -1,7 +1,7 @@
 // หน้าแรก — สรุปว่าคลังใช้ไปเท่าไร ว่างเท่าไร และรายการเคลื่อนย้ายล่าสุด
-import { api, auth, wh } from '../api.js?v=50';
+import { api, auth, wh } from '../api.js?v=51';
 
-import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR, scanInput, toast } from '../ui.js?v=50';
+import { h, table, pill, fmtDateTime, fmtNum, MOVE_LABEL, MOVE_COLOR, scanInput, toast } from '../ui.js?v=51';
 
 export async function dashboardView() {
   const d = await api.get('/api/dashboard', { warehouse_id: wh.id });

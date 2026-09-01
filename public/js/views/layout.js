@@ -1,6 +1,6 @@
 // ผังคลังสินค้า — เลือกคลัง แล้วจัดวาง RACK บนผังพื้น (เฉพาะ ADMIN แก้ไขได้)
-import { api, auth } from '../api.js?v=50';
-import { h, field, modal, toast, pill, fmtNum, confirmBox } from '../ui.js?v=50';
+import { api, auth } from '../api.js?v=51';
+import { h, field, modal, toast, pill, fmtNum, confirmBox , rackSize} from '../ui.js?v=51';
 
 const ZONE_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
@@ -166,7 +166,7 @@ export async function warehouseLayoutView({ match }) {
     return h('div', {
       class: `floor-rack ${isSel ? 'selected' : ''} ${r.status === 'INACTIVE' ? 'off' : ''}`,
       style: `--zc:${r.color || '#2563eb'}; grid-column:${r.pos_x + 1}/span ${s.cols}; grid-row:${r.pos_y + 1}/span ${s.rows}`,
-      title: `${r.zone_code}-${r.rag_no} · ${r.zone_name} · ${r.total_levels}ชั้น×${r.total_depths / 2}ล็อค`,
+      title: `${r.zone_code}-${r.rag_no} · ${r.zone_name} · ${rackSize(r.total_levels, r.total_depths)}`,
       draggable: canManage ? 'true' : null,
       ondragstart: canManage ? (e) => {
         dragging = asRack(r);
@@ -316,7 +316,7 @@ export async function warehouseLayoutView({ match }) {
       h('div', {},
         h('div', { class: 'grid g2' },
           kv('โซน', `${r.zone_code} — ${r.zone_name}`),
-          kv('ขนาด', `${r.total_levels} ชั้น × ${r.total_depths / 2} ล็อค (${r.total_depths} ตอน)`),
+          kv('ขนาด', rackSize(r.total_levels, r.total_depths)),
           kv('ตำแหน่งทั้งหมด', fmtNum(r.total)),
           kv('ใช้งาน', `${r.occupied}/${r.usable} (${r.usage_pct}%)`),
           kv('ตำแหน่งบนผัง', `คอลัมน์ ${r.pos_x + 1} · แถว ${r.pos_y + 1} (${s.cols}×${s.rows} ช่อง)`),
@@ -356,7 +356,7 @@ export async function warehouseLayoutView({ match }) {
         h('div', { class: 'grid g2' }, field('หมายเลข RACK', no, null, 'รหัสชั้นวาง เช่น A01, B02 — ใช้ร่วมกับโซนเป็นรหัสตำแหน่ง'), field('โซน', zoneSel, null, 'โซนจัดเก็บที่ชั้นวางนี้อยู่ เช่น FG (สินค้าสำเร็จรูป), RM (วัตถุดิบ)')),
         h('div', { class: 'grid g2' },
           field('จำนวนชั้น (Level)', lvl, 'ความสูงของชั้นวาง', 'จำนวนชั้นจากล่างขึ้นบน — L1 คือชั้นล่างสุด หยิบง่ายที่สุด'),
-          field('จำนวนตอน', dep, 'ใส่เลขคู่ — ทุก 2 ตอน = 1 ล็อค (1 พาเลต)', 'ความลึกของ Drive-in Rack — D1 คือหน้าสุด เข้าถึงได้โดยตรง')),
+          field('จำนวนตอน', dep, 'ทุก 2 ตอน = 1 ล็อค (1 พาเลต) — เป็นเลขคี่ได้', 'ความลึกของ Drive-in Rack — D1 คือหน้าสุด เข้าถึงได้โดยตรง')),
         field('หมายเหตุ', nt, null, 'บันทึกเพิ่มเติมเกี่ยวกับชั้นวาง เช่น ตำแหน่งพิเศษ'),
         status ? field('สถานะ', status, null, 'ปิดใช้งานจะไม่แสดงชั้นวางนี้ในการแนะนำตำแหน่ง') : null,
         at ? h('div', { class: 'hint' }, `จะวางที่ช่อง คอลัมน์ ${at.x + 1} · แถว ${at.y + 1}`) : null),
@@ -372,7 +372,6 @@ export async function warehouseLayoutView({ match }) {
               ...(at ? { pos_x: at.x, pos_y: at.y } : {}),
             };
             if (!body.rag_no) throw new Error('กรุณากรอกหมายเลข RACK');
-            if (body.total_depths % 2 !== 0) throw new Error('จำนวนตอนต้องเป็นเลขคู่ (ทุก 2 ตอน = 1 ล็อค)');
             const res = r ? await api.put(`/api/rags/${r.rag_id}`, body) : await api.post('/api/rags', body);
             toast(r ? 'อัปเดตชั้นวางแล้ว' : `เพิ่มชั้นวางเรียบร้อย (${res.total ?? res.created} ตำแหน่ง)`);
             m.close(); refresh();
