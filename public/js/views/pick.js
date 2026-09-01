@@ -1,7 +1,7 @@
 // วางแผนหยิบสินค้าตามใบสั่งขาย (SO) — 1 ใบสั่งมีได้หลายสินค้า
 // ระบุ SO ก่อน → เพิ่มสินค้าทีละรายการ → ระบบคำนวณ FEFO ให้ → แก้ตำแหน่งเองได้ → ยืนยันทีเดียวทั้งใบ
-import { api, auth, wh } from '../api.js?v=51';
-import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal, scanInput, pickFiles, progress, packBreakdown, biggestPack } from '../ui.js?v=51';
+import { api, auth, wh } from '../api.js?v=52';
+import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal, scanInput, pickFiles, progress, packBreakdown, biggestPack } from '../ui.js?v=52';
 
 export async function pickView() {
   const [skus, zones, channels, aiStatus] = await Promise.all([

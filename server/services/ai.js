@@ -7,6 +7,7 @@ import { all } from '../lib/db.js';
 import * as inv from './inventory.js';
 import * as rpt from './reports.js';
 import * as docs from './documents.js';
+import * as carriers from './carriers.js';
 import * as intel from './intelligence.js';
 
 export { aiEnabled };
@@ -468,6 +469,77 @@ ${catalog}`,
       matched: lines.filter((l) => l.sku_id).length,
       needs_review: lines.filter((l) => l.needs_review).length,
     },
+    usage,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  1.5  แนะนำผู้ให้บริการขนส่งเมื่อไม่มีข้อมูลพื้นที่นั้นในระบบ
+// ══════════════════════════════════════════════════════════════
+
+const CARRIER_SCHEMA = {
+  type: 'object',
+  properties: {
+    carrier_code: { type: 'string', description: 'รหัสผู้ให้บริการขนส่งที่แนะนำ ต้องเลือกจากรายการที่ให้ไว้เท่านั้น ถ้าไม่มีเจ้าไหนเหมาะให้เว้นว่าง' },
+    confidence: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'], description: 'ความมั่นใจ — ไม่มีพื้นที่ใกล้เคียงเลยให้เป็น LOW' },
+    reason: { type: 'string', description: 'เหตุผลสั้น ๆ เป็นภาษาไทย อ้างอิงพื้นที่ที่เจ้านั้นให้บริการอยู่จริง' },
+    nearest_area: { type: 'string', description: 'พื้นที่ในระบบที่ใกล้เคียงที่สุดที่ใช้อ้างอิง ไม่มีให้เว้นว่าง' },
+  },
+  required: ['confidence', 'reason'],
+};
+
+/**
+ * ให้ AI ช่วยเดาขนส่งสำหรับจังหวัด/อำเภอที่ยังไม่มีในฐานข้อมูล
+ *
+ * ใช้เมื่อ suggestCarrier() หาไม่เจอเท่านั้น และบังคับให้เลือกจากรายชื่อขนส่งที่มีอยู่จริง
+ * ระบบตรวจซ้ำอีกชั้นว่ารหัสที่ AI ตอบมีอยู่จริง ไม่งั้นถือว่าเดาไม่ได้ — กัน AI แต่งชื่อขนส่ง
+ */
+export async function suggestCarrierAI({ province, district, customer_name } = {}) {
+  const coverage = await carriers.coverageSummary();
+  if (!coverage.length) throw badRequest('ยังไม่มีข้อมูลพื้นที่ให้บริการขนส่งในระบบ');
+
+  const list = coverage
+    .map((c) => `${c.carrier_code} (${c.carrier_name}) — ให้บริการ: ${c.areas.slice(0, 40).join(' · ')}`)
+    .join('\n');
+
+  const { data, usage } = await callClaudeJSON({
+    system: `คุณช่วยเลือกผู้ให้บริการขนส่งให้คลังสินค้าไทย โดยดูจากพื้นที่ที่แต่ละเจ้าให้บริการอยู่จริง
+
+กฎ:
+- เลือกได้เฉพาะรหัสที่อยู่ในรายการด้านล่างเท่านั้น ห้ามแต่งชื่อหรือรหัสใหม่
+- ยึดพื้นที่ให้บริการจริงเป็นหลัก ถ้าจังหวัดที่ถามอยู่ติดกันหรืออยู่ภาคเดียวกับพื้นที่ที่เจ้านั้นวิ่งอยู่ ถือว่าเป็นไปได้
+- ยิ่งใกล้พื้นที่ที่ให้บริการจริง ยิ่งมั่นใจได้มาก · ไม่มีเจ้าไหนวิ่งแถวนั้นเลยให้ confidence เป็น LOW
+- ถ้าไม่มีเจ้าไหนเหมาะเลยจริง ๆ ให้เว้น carrier_code ว่าง แล้วอธิบายใน reason
+- เหตุผลต้องอ้างอิงพื้นที่ที่เห็นในรายการ ห้ามอ้างข้อมูลนอกเหนือจากนี้
+
+รายชื่อผู้ให้บริการขนส่งและพื้นที่ที่ให้บริการจริง:
+${list}`,
+    messages: [{ role: 'user', content:
+      `ควรใช้ขนส่งเจ้าไหนส่งไปที่ ${district ? `อำเภอ${district} ` : ''}จังหวัด${province}` +
+      `${customer_name ? ` (ลูกค้า: ${customer_name})` : ''}` }],
+    schema: CARRIER_SCHEMA,
+    name: 'suggest_carrier',
+    description: 'แนะนำผู้ให้บริการขนส่งที่เหมาะกับพื้นที่',
+    model: MODEL.FAST,
+    maxTokens: 1024,
+  });
+
+  // ไม่เชื่อ AI ตรง ๆ — รหัสต้องมีอยู่จริงในระบบเท่านั้น
+  const picked = data.carrier_code
+    ? coverage.find((c) => c.carrier_code.toUpperCase() === String(data.carrier_code).trim().toUpperCase())
+    : null;
+
+  return {
+    source: 'AI',
+    carrier_id: picked?.carrier_id ?? null,
+    carrier_code: picked?.carrier_code ?? null,
+    carrier_name: picked?.carrier_name ?? null,
+    confidence: picked ? (data.confidence ?? 'LOW') : 'LOW',
+    reason: picked
+      ? (data.reason ?? '').trim()
+      : `${(data.reason ?? '').trim() || 'ไม่มีขนส่งเจ้าไหนให้บริการพื้นที่นี้'} — กรุณาเลือกเอง`,
+    nearest_area: data.nearest_area || null,
+    disclaimer: 'เป็นการเดาจากพื้นที่ให้บริการที่มีอยู่ กรุณาตรวจสอบก่อนยืนยันจ่ายออก',
     usage,
   };
 }

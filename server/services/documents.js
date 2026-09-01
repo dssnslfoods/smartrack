@@ -23,14 +23,17 @@ const createDoc = async (fields, user) => {
   const doc_no = await nextDocNo(fields.doc_type);
   const r = await run(
     `INSERT INTO documents (doc_type, doc_no, ref_no, party, channel_id, reason,
-                            qc_status, qc_note, note, ship_status, picked_at, created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+                            qc_status, qc_note, note, ship_status, picked_at, created_by,
+                            carrier_id, carrier, ship_province, ship_district)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     fields.doc_type, doc_no, fields.ref_no?.trim() || null, fields.party?.trim() || null,
     fields.channel_id ? Number(fields.channel_id) : null, fields.reason?.trim() || null,
     fields.qc_status || null, fields.qc_note?.trim() || null, fields.note?.trim() || null,
     fields.ship_status || null,
     fields.ship_status === 'PICKED' ? new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 19).replace('T', ' ') : null,
     user.user_id,
+    fields.carrier_id ? Number(fields.carrier_id) : null, fields.carrier?.trim() || null,
+    fields.ship_province?.trim() || null, fields.ship_district?.trim() || null,
   );
   return { doc_id: Number(r.lastInsertRowid), doc_no };
 };
@@ -179,7 +182,9 @@ export async function createIssue(input, user) {
 const SHIP_FLOW = ['PICKED', 'PACKED', 'SHIPPED', 'DELIVERED'];
 const SHIP_STAMP = { PACKED: 'packed_at', SHIPPED: 'shipped_at', DELIVERED: 'delivered_at' };
 
-export async function updateShipStatus(docId, { ship_status, tracking_no, carrier }, user) {
+export async function updateShipStatus(
+  docId, { ship_status, tracking_no, carrier, carrier_id, ship_province, ship_district }, user,
+) {
   const doc = await get('SELECT * FROM documents WHERE doc_id = ?', Number(docId));
   if (!doc) throw notFound('ไม่พบเอกสาร');
   if (doc.doc_type !== 'ISSUE') throw badRequest('เดินสถานะจัดส่งได้เฉพาะใบจ่ายสินค้า');
@@ -198,6 +203,18 @@ export async function updateShipStatus(docId, { ship_status, tracking_no, carrie
   }
   if (tracking_no !== undefined) { sets.push('tracking_no = ?'); params.push(tracking_no?.trim() || null); }
   if (carrier !== undefined) { sets.push('carrier = ?'); params.push(carrier?.trim() || null); }
+  // ผูกกับทะเบียนขนส่งเมื่อเลือกจากรายการ — เก็บชื่อเป็นข้อความไว้ด้วยเผื่อภายหลังลบเจ้านั้นออก
+  if (carrier_id !== undefined) {
+    const id = carrier_id ? Number(carrier_id) : null;
+    if (id) {
+      const c = await get('SELECT carrier_name FROM carriers WHERE carrier_id = ?', id);
+      if (!c) throw badRequest('ไม่พบผู้ให้บริการขนส่งที่เลือก');
+      if (carrier === undefined) { sets.push('carrier = ?'); params.push(c.carrier_name); }
+    }
+    sets.push('carrier_id = ?'); params.push(id);
+  }
+  if (ship_province !== undefined) { sets.push('ship_province = ?'); params.push(ship_province?.trim() || null); }
+  if (ship_district !== undefined) { sets.push('ship_district = ?'); params.push(ship_district?.trim() || null); }
   if (!sets.length) return await docDetail(docId);
 
   await run(`UPDATE documents SET ${sets.join(', ')} WHERE doc_id = ?`, ...params, Number(docId));

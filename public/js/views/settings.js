@@ -1,12 +1,13 @@
 // ตั้งค่าระบบ — จัดการโซน ชั้นวาง สินค้า ผู้ใช้งาน (เฉพาะ ADMIN)
-import { api } from '../api.js?v=51';
-import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=51';
+import { api } from '../api.js?v=52';
+import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=52';
 
 export async function settingsView() {
-  const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users', 'ai'];
+  const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'carriers', 'users', 'ai'];
   const labels = {
     warehouses: 'คลังสินค้า', zones: 'โซน', rags: 'ชั้นวาง (RACK)',
-    skus: 'สินค้า (SKU)', channels: 'ช่องทางขาย', users: 'ผู้ใช้งาน', ai: 'ตั้งค่า AI',
+    skus: 'สินค้า (SKU)', channels: 'ช่องทางขาย', carriers: 'ขนส่ง',
+    users: 'ผู้ใช้งาน', ai: 'ตั้งค่า AI',
   };
   // ตั้งค่าต้องทำไล่จากบนลงล่าง: คลัง → โซน → ชั้นวาง เพราะแต่ละชั้นอิงของก่อนหน้า
   const tabTips = {
@@ -15,6 +16,7 @@ export async function settingsView() {
     rags: 'ชั้นวางแต่ละตัว — ระบุจำนวนชั้นและล็อค แล้วระบบจะสร้างรหัสตำแหน่งให้ครบทุกช่องอัตโนมัติ',
     skus: 'ข้อมูลสินค้าที่จัดเก็บได้ — รหัส ชื่อ หน่วยนับ อายุสินค้า และบาร์โค้ด',
     channels: 'ช่องทางขายและเกณฑ์ % อายุคงเหลือขั้นต่ำที่แต่ละช่องทางรับได้ ใช้ตรวจตอนจ่ายออก',
+    carriers: 'ทะเบียนบริษัทขนส่งและพื้นที่ที่แต่ละเจ้าให้บริการ — ระบบใช้ข้อมูลนี้แนะนำขนส่งจากที่อยู่ลูกค้าตอนจ่ายออก',
     users: 'บัญชีผู้ใช้และสิทธิ์การใช้งาน — ADMIN แก้ได้ทุกอย่าง · STAFF รับ-จ่ายของ · VIEWER ดูอย่างเดียว',
     ai: 'เลือกค่าย AI และใส่ API Key เพื่อเปิดใช้น้องสต๊อค สแกนเอกสาร และการวิเคราะห์เชิงลึก',
   };
@@ -36,6 +38,7 @@ export async function settingsView() {
       else if (active === 'rags') await loadRags();
       else if (active === 'skus') await loadSkus();
       else if (active === 'channels') await loadChannels();
+      else if (active === 'carriers') await loadCarriers();
       else if (active === 'ai') await loadAI();
       else await loadUsers();
     } catch (err) { content.replaceChildren(h('div', { class: 'empty-state' }, err.message)); }
@@ -398,6 +401,126 @@ export async function settingsView() {
           } catch (err) { toast(err.message, 'err'); }
         } }, 'บันทึก'),
       ]);
+  }
+
+  // ======== บริษัทขนส่ง + พื้นที่ให้บริการ ========
+  // ข้อมูลตั้งต้นนำเข้าจากไฟล์ Excel ของทีมขาย แต่แก้ไขเพิ่มลบได้ทั้งหมดจากหน้านี้
+  async function loadCarriers() {
+    const rows = await api.get('/api/carriers');
+    content.replaceChildren(
+      h('p', { class: 'muted', style: 'margin:0 0 12px' },
+        'ระบบใช้ทะเบียนนี้แนะนำขนส่งตอนจ่ายสินค้า โดยดูจากจังหวัด/อำเภอของลูกค้า — ',
+        'ยิ่งใส่พื้นที่ให้บริการครบ คำแนะนำก็ยิ่งแม่น'),
+      h('div', { style: 'text-align:right;margin-bottom:12px' },
+        h('button', { class: 'btn primary', title: 'เพิ่มบริษัทขนส่งใหม่เข้าทะเบียน แล้วค่อยกำหนดพื้นที่ที่เจ้านี้วิ่งส่ง', onclick: () => carrierForm() }, '+ เพิ่มขนส่ง')),
+      table([
+        { label: 'รหัส', key: 'carrier_code', mono: true },
+        { label: 'ชื่อขนส่ง', key: 'carrier_name' },
+        { label: 'โทร', value: (r) => r.phone || '—' },
+        { label: 'ลูกค้าที่ใช้', value: (r) => fmtNum(r.customer_count), num: true },
+        { label: 'พื้นที่ให้บริการ', value: (r) => fmtNum(r.area_count), num: true },
+        { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
+        { label: '', value: (r) => h('span', {},
+          h('button', { class: 'btn ghost', title: 'ดูและแก้ไขจังหวัด/อำเภอที่ขนส่งเจ้านี้วิ่งส่ง พร้อมรายชื่อร้านที่ใช้อยู่จริง', onclick: () => carrierAreas(r) }, 'พื้นที่'),
+          h('button', { class: 'btn ghost', title: 'แก้ไขชื่อ รหัส เบอร์โทร หรือปิดใช้งานขนส่งเจ้านี้', onclick: () => carrierForm(r) }, 'แก้ไข')) },
+      ], rows));
+  }
+
+  function carrierForm(c) {
+    const code = h('input', { value: c?.carrier_code ?? '', placeholder: 'เช่น BW / KERRY' });
+    const name = h('input', { value: c?.carrier_name ?? '', placeholder: 'เช่น ขนส่ง B&W' });
+    const phone = h('input', { value: c?.phone ?? '', placeholder: 'เบอร์ติดต่อ' });
+    const note = h('input', { value: c?.note ?? '', placeholder: 'หมายเหตุ' });
+    const status = c ? h('select', {},
+      h('option', { value: 'ACTIVE', selected: c.status === 'ACTIVE' }, 'ใช้งาน'),
+      h('option', { value: 'INACTIVE', selected: c.status === 'INACTIVE' }, 'ปิดใช้งาน')) : null;
+
+    const m = modal(c ? 'แก้ไขบริษัทขนส่ง' : 'เพิ่มบริษัทขนส่ง',
+      h('div', {},
+        h('div', { class: 'grid g2' },
+          field('รหัสขนส่ง', code, null, 'รหัสย่อไว้อ้างอิงในเอกสาร ต้องไม่ซ้ำกัน'),
+          field('ชื่อขนส่ง', name, null, 'ชื่อที่ทีมเรียกกันจริง เช่น ขนส่ง B&W — ชื่อนี้จะไปขึ้นบนใบส่งสินค้า')),
+        h('div', { class: 'grid g2' },
+          field('เบอร์โทร', phone, null, 'เบอร์ติดต่อคนขับหรือออฟฟิศขนส่ง'),
+          field('หมายเหตุ', note, null, 'บันทึกช่วยจำ เช่น รอบรถ เงื่อนไขค่าส่ง')),
+        status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่ถูกเสนอเป็นตัวเลือกตอนจ่ายออก แต่เอกสารเก่ายังอ้างถึงได้') : null),
+      [
+        c ? h('button', { class: 'btn danger', title: 'ลบขนส่งเจ้านี้ออกจากทะเบียน — ลบไม่ได้ถ้ามีเอกสารจ่ายออกใช้อยู่ ให้ปิดใช้งานแทน', onclick: async () => {
+          if (!await confirmBox(`ลบ "${c.carrier_name}" ออกจากทะเบียน?`, 'พื้นที่ให้บริการและรายชื่อร้านที่ผูกกับเจ้านี้จะถูกลบไปด้วย')) return;
+          try { await api.del(`/api/carriers/${c.carrier_id}`); toast('ลบขนส่งแล้ว'); m.close(); load(); }
+          catch (err) { toast(err.message, 'err'); }
+        } }, 'ลบ') : null,
+        h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
+        h('button', { class: 'btn primary', title: 'บันทึกข้อมูลขนส่งเข้าทะเบียน', onclick: async () => {
+          try {
+            const body = {
+              carrier_code: code.value, carrier_name: name.value,
+              phone: phone.value, note: note.value, ...(status ? { status: status.value } : {}),
+            };
+            c ? await api.put(`/api/carriers/${c.carrier_id}`, body) : await api.post('/api/carriers', body);
+            toast('บันทึกขนส่งแล้ว'); m.close(); load();
+          } catch (err) { toast(err.message, 'err'); }
+        } }, 'บันทึก'),
+      ]);
+  }
+
+  async function carrierAreas(c) {
+    const d = await api.get(`/api/carriers/${c.carrier_id}`);
+    const listEl = h('div', {});
+
+    function renderAreas(areas) {
+      listEl.replaceChildren(areas.length
+        ? table([
+          { label: 'จังหวัด', key: 'province' },
+          { label: 'อำเภอ', value: (a) => a.district || h('span', { class: 'muted' }, 'ทั้งจังหวัด') },
+          { label: 'ลำดับ', key: 'priority', num: true },
+          { label: 'ที่มา', value: (a) => pill(a.source === 'IMPORT' ? 'นำเข้า' : 'เพิ่มเอง', a.source === 'IMPORT' ? 'blue' : 'green') },
+          { label: 'หมายเหตุ', value: (a) => a.note || '—' },
+          { label: '', value: (a) => h('button', { class: 'btn ghost', title: 'ลบพื้นที่นี้ออก — ระบบจะเลิกเสนอขนส่งเจ้านี้สำหรับพื้นที่ดังกล่าว', onclick: async () => {
+            try {
+              await api.del(`/api/carriers/areas/${a.area_id}`);
+              renderAreas(areas.filter((x) => x.area_id !== a.area_id));
+              toast('ลบพื้นที่แล้ว'); load();
+            } catch (err) { toast(err.message, 'err'); }
+          } }, 'ลบ') },
+        ], areas)
+        : h('div', { class: 'empty-state' }, 'ยังไม่ได้กำหนดพื้นที่ให้บริการ'));
+    }
+    renderAreas(d.areas);
+
+    const prov = h('input', { placeholder: 'เช่น สงขลา' });
+    const dist = h('input', { placeholder: 'เว้นว่าง = ทั้งจังหวัด' });
+    const prio = h('input', { type: 'number', min: '1', value: '50', style: 'width:90px' });
+
+    const m = modal(`พื้นที่ให้บริการ — ${c.carrier_name}`,
+      h('div', {},
+        h('div', { class: 'row', style: 'align-items:flex-end;flex-wrap:wrap;margin-bottom:14px' },
+          field('จังหวัด', prov, null, 'จังหวัดปลายทางที่ขนส่งเจ้านี้วิ่งส่งได้'),
+          field('อำเภอ', dist, null, 'ระบุอำเภอถ้าเจ้านี้ส่งเฉพาะบางอำเภอ — เว้นว่างถ้าส่งทั้งจังหวัด'),
+          field('ลำดับความสำคัญ', prio, null, 'ตัวเลขน้อย = ถูกเสนอก่อน เมื่อมีหลายเจ้าวิ่งพื้นที่เดียวกัน (อำเภอเจาะจงใช้ 10 · ทั้งจังหวัด 50)'),
+          h('button', { class: 'btn primary', title: 'เพิ่มพื้นที่นี้ให้ขนส่งเจ้านี้ — มีผลกับการแนะนำขนส่งตอนจ่ายออกทันที', onclick: async () => {
+            try {
+              await api.post('/api/carriers/areas', {
+                carrier_id: c.carrier_id, province: prov.value, district: dist.value, priority: prio.value,
+              });
+              const fresh = await api.get(`/api/carriers/${c.carrier_id}`);
+              renderAreas(fresh.areas);
+              prov.value = ''; dist.value = '';
+              toast('เพิ่มพื้นที่แล้ว'); load();
+            } catch (err) { toast(err.message, 'err'); }
+          } }, '+ เพิ่มพื้นที่')),
+        listEl,
+        d.customers.length
+          ? h('details', { style: 'margin-top:16px' },
+            h('summary', { style: 'cursor:pointer' }, `ร้านที่ใช้ขนส่งเจ้านี้อยู่จริง (${d.customers.length} ร้าน)`),
+            table([
+              { label: 'รหัส', key: 'customer_code', mono: true },
+              { label: 'ชื่อร้าน', key: 'customer_name' },
+              { label: 'จังหวัด', key: 'province' },
+              { label: 'อำเภอ', value: (r) => r.district || '—' },
+            ], d.customers))
+          : null),
+      [h('button', { class: 'btn', onclick: () => m.close() }, 'ปิด')]);
   }
 
   // ======== ผู้ใช้งาน ========

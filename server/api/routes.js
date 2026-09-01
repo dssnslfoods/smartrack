@@ -13,6 +13,7 @@ import * as intel from '../services/intelligence.js';
 import * as ai from '../services/ai.js';
 import { getAISettings, saveAISettings, testAIConnection, listAIModels } from '../lib/claude.js';
 import { locationLabels } from '../services/labels.js';
+import * as car from '../services/carriers.js';
 
 /** ชนิดโซน: ชั้นวาง · พื้นราบ (วางพาเลทบนพื้น) · พื้นที่เศษที่แกะจากลังแล้ว */
 const ZONE_TYPES = ['RACK', 'FLOOR', 'BREAK'];
@@ -321,6 +322,23 @@ export const routes = [
     messages: body.messages, warehouseId: int(body.warehouse_id), warehouseName: body.warehouse_name }, user)],
   ['POST', '/api/ai/scan-receiving', 'move', ({ body }) => ai.scanReceivingDoc({ files: body.files })],
   ['POST', '/api/ai/scan-so', 'view', ({ body }) => ai.scanSalesOrder({ files: body.files })],
+  ['POST', '/api/ai/suggest-carrier', 'view', ({ body }) => ai.suggestCarrierAI(body)],
+
+  // ---------------- ผู้ให้บริการขนส่ง ----------------
+  // เส้นทางเฉพาะต้องมาก่อน /:id ไม่งั้น :id จะกลืน suggest กับ areas ไปหมด
+  ['GET', '/api/carriers', 'view', () => car.listCarriers()],
+  // แนะนำขนส่งจากที่อยู่ผู้รับ — คำนวณจากฐานข้อมูลล้วน (ไม่พบค่อยเรียก /api/ai/suggest-carrier ต่อ)
+  ['GET', '/api/carriers/suggest', 'view', ({ query }) => car.suggestCarrier({
+    customer_code: query.customer_code, customer_name: query.customer_name,
+    province: query.province, district: query.district,
+  })],
+  ['GET', '/api/carriers/areas/known', 'view', () => car.knownAreas()],
+  ['POST', '/api/carriers/areas', 'manage', ({ body }) => car.saveArea(body)],
+  ['DELETE', '/api/carriers/areas/:id', 'manage', ({ params }) => car.deleteArea(+params.id)],
+  ['GET', '/api/carriers/:id', 'view', ({ params }) => car.carrierDetail(+params.id)],
+  ['POST', '/api/carriers', 'manage', ({ body }) => car.createCarrier(body)],
+  ['PUT', '/api/carriers/:id', 'manage', ({ params, body }) => car.updateCarrier(+params.id, body)],
+  ['DELETE', '/api/carriers/:id', 'manage', ({ params }) => car.deleteCarrier(+params.id)],
   ['GET', '/api/ai/brief', 'view', ({ query }) => ai.dailyBrief({
     warehouseId: int(query.warehouse_id), warehouseName: query.warehouse_name })],
   ['GET', '/api/ai/explain', 'view', ({ query }) => ai.explain({
