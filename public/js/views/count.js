@@ -1,6 +1,6 @@
 // นับสต็อก (Cycle Count) — เปิดรอบ → สแกนตำแหน่ง+กรอกจำนวน → เทียบผลต่าง → อนุมัติปรับยอด
-import { api, auth } from '../api.js?v=48';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles, progress as aiProgress } from '../ui.js?v=48';
+import { api, auth } from '../api.js?v=49';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, confirmBox, scanInput, pickFiles, progress as aiProgress } from '../ui.js?v=49';
 
 const RSTATUS = { OPEN: ['กำลังนับ', 'blue'], APPROVED: ['อนุมัติแล้ว', 'green'], CANCELLED: ['ยกเลิก', 'gray'] };
 const CONF = { HIGH: ['มั่นใจสูง', 'green'], MEDIUM: ['มั่นใจปานกลาง', 'amber'], LOW: ['มั่นใจต่ำ', 'red'] };

@@ -1,7 +1,7 @@
 // ค้นหาสินค้า — ตอบคำถามหลัก "สินค้าตัวนี้อยู่ที่ไหน"
-import { api, auth, wh, download } from '../api.js?v=48';
-import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill, PTYPE_LABEL } from '../ui.js?v=48';
-import { itemActions } from '../actions.js?v=48';
+import { api, auth, wh, download } from '../api.js?v=49';
+import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill, PTYPE_LABEL } from '../ui.js?v=49';
+import { itemActions } from '../actions.js?v=49';
 
 // ---- สเกลสีตามอายุคงเหลือ — ยิ่งแดงยิ่งต้องรีบระบาย ----
 const EXP_SCALE = [
@@ -17,6 +17,24 @@ const expColor = (days) => (days === null || days === undefined
   ? NO_EXP.color
   : (EXP_SCALE.find((s) => days < s.max) ?? EXP_SCALE.at(-1)).color);
 
+// ---- ชนิดที่จัดเก็บ: ชั้นวาง / พื้นราบ / พื้นที่เศษ ----
+const ZT_LABEL = { RACK: 'ชั้นวาง', FLOOR: 'พื้นราบ', BREAK: 'พื้นที่เศษ' };
+const ZT_COLOR = { RACK: 'gray', FLOOR: 'amber', BREAK: 'blue' };
+const ZT_TITLE = { FLOOR: '🟧 พื้นราบ', BREAK: '📦 พื้นที่เศษ (แกะลังแล้ว)' };
+const ztPill = (t) => pill(ZT_LABEL[t] ?? t ?? '—', ZT_COLOR[t] ?? 'gray');
+
+/**
+ * รหัสตำแหน่ง — ลิงก์ไปแผนผังชั้นวางได้เฉพาะของที่อยู่บนชั้นวางเท่านั้น
+ * ของบนพื้นราบ/พื้นที่เศษไม่มี rag_id ถ้าลิงก์ไปจะกลายเป็น #/map/null แล้วเปิดไม่ได้
+ */
+const locCode = (r) => (r.rag_id
+  ? h('a', {
+      class: 'mono',
+      title: 'เปิดแผนผังชั้นวางแล้วเน้นช่องนี้ให้ — ใช้ดูว่าของอยู่ชั้นไหน ตอนไหน',
+      href: `#/map/${r.rag_id}?loc=${r.location_code}`,
+    }, r.location_code)
+  : h('span', { class: 'mono', title: 'ตำแหน่งนี้ไม่ได้อยู่บนชั้นวาง จึงไม่มีแผนผังให้เปิด' }, r.location_code));
+
 async function checkEmptyLocation(q) {
   const code = (q ?? '').trim().toUpperCase();
   if (!code || code.length < 5) return null;
@@ -30,10 +48,14 @@ async function checkEmptyLocation(q) {
         h('h2', {}, `ตำแหน่ง ${loc.location_code}`),
         h('div', { class: 'grid g2', style: 'margin:12px 0' },
           h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'สถานะ'), h('div', { style: 'font-weight:600' }, statusLabel)),
-          h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'ชั้นวาง'), h('div', { style: 'font-weight:600' }, loc.rag_no)),
+          h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'ชั้นวาง'), h('div', { style: 'font-weight:600' }, loc.rag_no ?? ztPill(loc.zone_type))),
           h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'โซน'), h('div', { style: 'font-weight:600' }, `${loc.zone_code} — ${loc.zone_name}`)),
-          h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'ชั้น / ตอน'), h('div', { style: 'font-weight:600' }, `L${loc.level} / D${loc.depth}`))),
-        h('a', { class: 'btn primary', title: 'เปิดแผนผังชั้นวางแล้วเน้นช่องนี้ให้ — ใช้ดูว่าตำแหน่งอยู่ชั้นไหน ตอนไหน และรอบ ๆ มีของอะไรอยู่', href: `#/map/${loc.rag_id}?loc=${loc.location_code}` }, '🗺️ ดูบนแผนผัง')),
+          h('div', {}, h('div', { class: 'muted', style: 'font-size:12px' }, 'ชั้น / ตอน'), h('div', { style: 'font-weight:600' },
+            loc.rag_id ? `L${loc.level} / D${loc.depth}` : (loc.slot_no ? `ช่อง ${loc.slot_no}` : '—')))),
+        // ตำแหน่งพื้นราบ/พื้นที่เศษไม่มีชั้นวาง จึงไม่มีแผนผังให้เปิด
+        loc.rag_id
+          ? h('a', { class: 'btn primary', title: 'เปิดแผนผังชั้นวางแล้วเน้นช่องนี้ให้ — ใช้ดูว่าตำแหน่งอยู่ชั้นไหน ตอนไหน และรอบ ๆ มีของอะไรอยู่', href: `#/map/${loc.rag_id}?loc=${loc.location_code}` }, '🗺️ ดูบนแผนผัง')
+          : h('div', { class: 'muted', style: 'font-size:13px' }, 'ตำแหน่งนี้ไม่ได้อยู่บนชั้นวาง จึงไม่มีแผนผังให้เปิด')),
     ];
     if (data.history && data.history.length) {
       parts.push(h('div', { class: 'card', style: 'margin-top:14px' },
@@ -90,6 +112,16 @@ export async function searchView({ params }) {
     opt('WARNING', '🟡 เฝ้าระวัง — เหลือ 30–90 วัน'),
     opt('OK', '🟢 ปกติ — เหลือเกิน 90 วัน'),
     opt('NONE', '⚪ ไม่ระบุวันหมดอายุ'));
+  const zoneTypeSel = h('select', {},
+    opt('', '— ทุกที่จัดเก็บ —'),
+    opt('RACK', '🗄️ ชั้นวาง'),
+    opt('FLOOR', '🟧 พื้นราบ'),
+    opt('BREAK', '📦 พื้นที่เศษ (แกะลังแล้ว)'));
+  // ช่องซ่อน — ตั้งค่าได้จากปุ่มลัดอย่างเดียว แต่ต้องถูกนับและถูกล้างเหมือนตัวกรองอื่น
+  const looseSel = h('select', { hidden: true },
+    opt('', '— ทั้งลังเต็มและเศษ —'),
+    opt('1', 'เฉพาะของที่แกะลังแล้ว'),
+    opt('0', 'เฉพาะลังที่ยังไม่แกะ'));
   const levelSel = h('select', {},
     opt('', '— ทุกชั้น —'),
     opt('ground', '🙌 ชั้นล่าง (L1) — หยิบด้วยมือ'),
@@ -126,7 +158,7 @@ export async function searchView({ params }) {
   syncRags();
   zoneSel.addEventListener('change', syncRags);
 
-  const selects = [zoneSel, skuSel, ragSel, ptypeSel, catSel, expStatusSel, levelSel, sortSel];
+  const selects = [zoneSel, skuSel, ragSel, ptypeSel, catSel, expStatusSel, levelSel, zoneTypeSel, looseSel, sortSel];
   const inputs = [minDays, maxDays, minQty, maxQty, minPct, maxPct, expFrom, expTo, lotInput];
   selects.forEach((el) => el.addEventListener('change', () => run()));
   inputs.forEach((el) => {
@@ -170,7 +202,9 @@ export async function searchView({ params }) {
     preset('🙌 หยิบง่าย (ชั้น L1)', 'ของที่อยู่ชั้นล่าง หยิบด้วยมือได้ ไม่ต้องใช้รถยก',
       () => { levelSel.value = 'ground'; }),
     preset('📦 ของเยอะ (500+)', 'ตำแหน่งที่มีของตั้งแต่ 500 หน่วยขึ้นไป',
-      () => { minQty.value = '500'; sortSel.value = 'qty_desc'; }));
+      () => { minQty.value = '500'; sortSel.value = 'qty_desc'; }),
+    preset('📦 เฉพาะของที่แกะลังแล้ว', 'ของที่แกะออกจากลังแล้วเหลือเป็นเศษ — ควรระบายก่อนลังเต็ม',
+      () => { looseSel.value = '1'; }));
 
   const filterRow = h('details', { class: 'filter-box' },
     h('summary', {}, '⚙️ ตัวกรองเพิ่มเติม — สินค้า · ตำแหน่ง · อายุ · จำนวน'),
@@ -181,6 +215,7 @@ export async function searchView({ params }) {
         field('ประเภทสินค้า', ptypeSel, null, 'วัตถุดิบ / บรรจุภัณฑ์ / สำเร็จรูป — ตามที่ตั้งไว้ในข้อมูลสินค้า'),
         field('หมวดหมู่', catSel, null, 'หมวดย่อยของสินค้า เช่น ครีม สบู่ แชมพู')),
       h('div', { class: 'row' },
+        field('ที่จัดเก็บ', zoneTypeSel, null, 'ชั้นวาง = เก็บบน RACK · พื้นราบ = วางพาเลทกับพื้น · พื้นที่เศษ = ของที่แกะลังแล้ว'),
         field('ชั้นวาง (RACK)', ragSel, null, 'เจาะจงชั้นวาง — รายการจะแคบลงตามโซนที่เลือกไว้ด้านบน'),
         field('ชั้น (Level)', levelSel, null, 'ชั้นล่างหยิบด้วยมือได้ ชั้นสูงต้องใช้รถยก — ใช้วางแผนกำลังคน'),
         field('Lot / รุ่นการผลิต', lotInput, null, 'ค้นเฉพาะ Lot ที่ต้องการ เช่น ตอนเรียกคืนสินค้า (recall)')),
@@ -206,6 +241,7 @@ export async function searchView({ params }) {
     sku_id: skuSel.value, rag_id: ragSel.value,
     product_type: ptypeSel.value, category: catSel.value,
     level: levelSel.value, lot: lotInput.value.trim(),
+    zone_type: zoneTypeSel.value, loose: looseSel.value,
     expiry_status: expStatusSel.value,
     min_days: minDays.value, max_days: maxDays.value,
     min_pct: minPct.value, max_pct: maxPct.value,
@@ -246,12 +282,18 @@ export async function searchView({ params }) {
   }
 
   const renderTable = (rows) => table([
-    { label: 'ตำแหน่ง', value: (r) => h('a', { href: `#/map/${r.rag_id}?loc=${r.location_code}` }, r.location_code), mono: true },
+    { label: 'ตำแหน่ง', value: (r) => h('div', {},
+        locCode(r),
+        h('div', { style: 'margin-top:3px' }, ztPill(r.zone_type))) },
     { label: 'สินค้า', value: (r) => h('div', {},
         h('div', { style: 'font-weight:600' }, r.sku_name),
         h('div', { class: 'mono muted', style: 'font-size:12px' }, r.sku_code)) },
-    { label: 'ชั้น / ตอน', value: (r) => `L${r.level} / D${r.depth}` },
+    // พื้นราบ/พื้นที่เศษไม่มีชั้นกับตอน (เป็น 0/ว่าง) — ใช้เลขช่องแทนไม่ให้อ่านผิด
+    { label: 'ชั้น / ตอน', value: (r) => (r.rag_id ? `L${r.level} / D${r.depth}` : (r.slot_no ? `ช่อง ${r.slot_no}` : '—')) },
     { label: 'Lot', key: 'lot_no', mono: true },
+    { label: 'พาเลท', value: (r) => h('div', { style: 'display:flex;align-items:center;gap:6px;flex-wrap:wrap' },
+        h('span', { class: 'mono' }, r.pallet_no ?? '—'),
+        r.is_loose ? pill('เศษ', 'amber') : null) },
     { label: 'จำนวน', value: (r) => `${fmtNum(r.quantity)} ${r.unit}`, num: true },
     { label: 'วันหมดอายุ', value: (r) => (r.exp_date ? h('div', {}, r.exp_date, ' ', expiryPill(r.expiry)) : '—') },
     { label: '% อายุ', value: (r) => pctPill(r.pct_remaining) },
@@ -261,15 +303,26 @@ export async function searchView({ params }) {
 
   // ---- แผนผังชั้นวาง: วาดทุก RACK ที่พบสินค้า ช่องที่ตรงผลค้นหาจะเน้นสีตามอายุคงเหลือ ----
   async function renderMap(rows) {
-    const ragIds = [...new Set(rows.map((r) => r.rag_id))];
+    // ของบนพื้นราบ/พื้นที่เศษไม่มีชั้นวาง จึงวาดลงตารางชั้นวางไม่ได้ — แยกไปแสดงเป็นรายการด้านล่าง
+    const rackRows = rows.filter((r) => r.rag_id);
+    const flatRows = rows.filter((r) => !r.rag_id);
+
+    const ragIds = [...new Set(rackRows.map((r) => r.rag_id))];
     const maps = await Promise.all(ragIds.map((id) =>
       api.get(`/api/rags/${id}/map`).catch(() => null)));
 
     const panels = maps.map((data, i) => {
-      const hits = rows.filter((r) => r.rag_id === ragIds[i]);
+      const hits = rackRows.filter((r) => r.rag_id === ragIds[i]);
       if (!data) return fallbackPanel(hits);
       return rackPanel(data, hits);
     });
+
+    const flatPanels = ['FLOOR', 'BREAK']
+      .map((t) => { const hits = flatRows.filter((r) => r.zone_type === t); return hits.length ? flatPanel(t, hits) : null; })
+      .filter(Boolean);
+    // เผื่อมีที่จัดเก็บชนิดใหม่ที่หน้านี้ยังไม่รู้จัก — ต้องยังเห็น ห้ามหายเงียบ ๆ
+    const other = flatRows.filter((r) => r.zone_type !== 'FLOOR' && r.zone_type !== 'BREAK');
+    if (other.length) flatPanels.push(flatPanel(null, other));
 
     const legend = h('div', { class: 'smap-legend' },
       h('b', { style: 'margin-right:2px' }, 'สีบอกอายุคงเหลือ:'),
@@ -277,7 +330,37 @@ export async function searchView({ params }) {
       h('span', {}, h('i', { style: `background:${NO_EXP.color}` }), NO_EXP.label),
       h('span', { style: 'color:#94a3b8' }, h('i', { style: 'background:#fff;border:2px solid #e2e8f0' }), 'ช่องอื่นในชั้นวาง (ไม่ตรงผลค้นหา)'));
 
-    return h('div', { class: 'smap' }, skuSummary(rows), ...panels, legend);
+    // ยอดรวมด้านบนนับทุกที่จัดเก็บ (ส่ง rows ทั้งชุด) ไม่ใช่เฉพาะของบนชั้นวาง
+    return h('div', { class: 'smap' }, skuSummary(rows), ...panels, ...flatPanels, legend);
+  }
+
+  // ---- ของที่ไม่ได้อยู่บนชั้นวาง — แสดงเป็นการ์ดรายตำแหน่ง แทนที่จะยัดลงตารางชั้นวาง ----
+  function flatPanel(zoneType, hits) {
+    const totalQty = hits.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+    const unit = hits[0]?.unit ?? '';
+
+    const card = (r) => h('div', {
+      style: `border:1px solid var(--line);border-left:5px solid ${expColor(r.days_to_expiry)};border-radius:10px;`
+        + 'padding:10px 12px;min-width:190px;background:#fff;cursor:pointer',
+      title: `${r.location_code} · ${r.sku_name} — คลิกเพื่อดูรายละเอียดและประวัติของรายการนี้`,
+      onclick: () => detail(r),
+    },
+      h('div', { class: 'mono', style: 'font-weight:800' }, r.location_code),
+      h('div', { class: 'muted', style: 'font-size:11px' }, r.slot_no ? `ช่อง ${r.slot_no}` : '—'),
+      h('div', { style: 'font-weight:800;margin-top:5px' }, `${fmtNum(r.quantity)} ${r.unit}`),
+      h('div', { class: 'muted', style: 'font-size:12px' }, `Lot ${r.lot_no ?? '—'}`),
+      h('div', { class: 'mono muted', style: 'font-size:11px' }, r.pallet_no ?? 'ไม่มีเลขพาเลท'),
+      h('div', { style: 'display:flex;gap:5px;flex-wrap:wrap;margin-top:5px' },
+        r.exp_date ? expiryPill(r.expiry) : pill('ไม่ระบุ EXP', 'gray'),
+        r.is_loose ? pill('เศษ', 'amber') : null));
+
+    return h('div', { class: 'smap-rack' },
+      h('div', { class: 'smap-head' },
+        h('h3', {}, ZT_TITLE[zoneType] ?? '📍 ที่จัดเก็บอื่น'),
+        pill(`พบ ${hits.length} ตำแหน่ง`, 'blue'),
+        pill(`รวม ${fmtNum(totalQty)} ${unit}`, 'green'),
+        h('span', { class: 'muted', style: 'font-size:12px' }, 'ไม่ได้อยู่บนชั้นวาง จึงไม่มีผังชั้น/ตอน')),
+      h('div', { style: 'display:flex;gap:10px;flex-wrap:wrap' }, ...hits.map(card)));
   }
 
   // ---- สรุปสินค้าที่ค้นเจอ — ชื่อเต็ม รหัส และยอดรวมทุกตำแหน่ง ----
@@ -316,6 +399,12 @@ export async function searchView({ params }) {
       api.get(`/api/warehouses/${id}/layout`).catch(() => null)));
 
     const panels = layouts.map((data, i) => (data ? floorPanel(data, rows, focusRagId) : null)).filter(Boolean);
+    // ผังนี้วางได้เฉพาะชั้นวาง — ต้องบอกตรง ๆ ว่ายังมีของอีกกี่ตำแหน่งที่ไม่ได้อยู่บนผัง
+    const offRack = rows.filter((r) => !r.rag_id);
+    if (panels.length && offRack.length) {
+      panels.push(h('div', { class: 'muted', style: 'font-size:12px' },
+        `หมายเหตุ: อีก ${offRack.length} ตำแหน่งอยู่บนพื้นราบ/พื้นที่เศษ ซึ่งไม่ได้วางอยู่บนผังชั้นวาง — ดูได้จากรายการด้านหลัง`));
+    }
     body.replaceChildren(...(panels.length
       ? [...panels, h('div', { class: 'smap-legend' },
           h('b', {}, 'ชั้นวางที่เน้นสี = มีสินค้าตัวนี้อยู่'),
@@ -527,7 +616,11 @@ export async function searchView({ params }) {
           kv('ตำแหน่ง', item.location_code), kv('รหัสสินค้า', item.sku_code),
           kv('Lot / รุ่นการผลิต', item.lot_no), kv('จำนวน', `${fmtNum(item.quantity)} ${item.unit}`),
           kv('วันหมดอายุ', item.exp_date ? `${item.exp_date} (${item.expiry.label})` : '—'),
-          kv('จัดเก็บเมื่อ', fmtDateTime(item.stored_at))),
+          kv('จัดเก็บเมื่อ', fmtDateTime(item.stored_at)),
+          // ข้อมูลรายการอาจยังไม่มีเลขพาเลท — ใช้ค่าจากผลค้นหาที่กดมาเป็นตัวสำรอง
+          kv('พาเลท', h('div', { style: 'display:flex;align-items:center;gap:6px;flex-wrap:wrap' },
+            h('span', { class: 'mono' }, item.pallet_no ?? r.pallet_no ?? '—'),
+            (item.is_loose ?? r.is_loose) ? pill('เศษ', 'amber') : null))),
         h('h2', { style: 'margin-top:16px' }, 'ประวัติของรายการนี้'),
         table([
           { label: 'เวลา', value: (x) => fmtDateTime(x.moved_at) },
@@ -539,7 +632,10 @@ export async function searchView({ params }) {
           { label: 'หมายเหตุ', key: 'note' },
         ], history)),
       [
-        h('a', { class: 'btn', title: 'เปิดแผนผังชั้นวางแล้วเน้นช่องที่เก็บรายการนี้ — ใช้ตอนจะเดินไปหยิบของจริง', href: `#/map/${item.rag_id}?loc=${item.location_code}` }, '🗺️ ดูบนแผนผัง'),
+        // ของบนพื้นราบ/พื้นที่เศษไม่มี rag_id — ถ้าใส่ลิงก์จะกลายเป็น #/map/null แล้วเปิดไม่ได้
+        ...(item.rag_id
+          ? [h('a', { class: 'btn', title: 'เปิดแผนผังชั้นวางแล้วเน้นช่องที่เก็บรายการนี้ — ใช้ตอนจะเดินไปหยิบของจริง', href: `#/map/${item.rag_id}?loc=${item.location_code}` }, '🗺️ ดูบนแผนผัง')]
+          : []),
         ...itemActions(item, () => { m.close(); run(); }),
       ]);
   }

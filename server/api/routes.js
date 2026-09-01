@@ -2,7 +2,7 @@
 import { all, get, run, tx } from '../lib/db.js';
 import { badRequest, conflict, notFound, int } from '../lib/http.js';
 import { login, logout, listUsers, hashSecret, PERMISSIONS, ROLE_NAME } from '../lib/auth.js';
-import { syncRagLocations, rackMap, emptyLocations } from '../services/locations.js';
+import { syncRagLocations, syncFloorLocations, rackMap, emptyLocations } from '../services/locations.js';
 import * as inv from '../services/inventory.js';
 import * as rpt from '../services/reports.js';
 import * as wh from '../services/warehouses.js';
@@ -13,6 +13,9 @@ import * as intel from '../services/intelligence.js';
 import * as ai from '../services/ai.js';
 import { getAISettings, saveAISettings, testAIConnection, listAIModels } from '../lib/claude.js';
 import { locationLabels } from '../services/labels.js';
+
+/** ชนิดโซน: ชั้นวาง · พื้นราบ (วางพาเลทบนพื้น) · พื้นที่เศษที่แกะจากลังแล้ว */
+const ZONE_TYPES = ['RACK', 'FLOOR', 'BREAK'];
 
 /** [method, path, สิทธิ์ที่ต้องมี (null = ไม่ต้องล็อกอิน), handler] */
 export const routes = [
@@ -65,6 +68,38 @@ export const routes = [
     inv.moveItem({ ...body, item_id: +params.id }, user)],
   ['PUT', '/api/items/:id', 'move', ({ params, body, user }) =>
     inv.editItem({ ...body, item_id: +params.id }, user)],
+  // แกะลัง — แยกของบางส่วนไปวางที่พื้นที่เศษ (ห้ามคละ Lot)
+  ['POST', '/api/items/:id/break', 'move', ({ params, body, user }) =>
+    inv.breakCarton({ ...body, item_id: +params.id }, user)],
+
+  // ---------------- พาเลท ----------------
+  ['GET', '/api/pallets', 'view', async ({ query }) => {
+    const w = [];
+    const p = [];
+    if (query.q) { w.push('(p.pallet_no ILIKE ? OR s.sku_code ILIKE ? OR s.sku_name ILIKE ? OR p.lot_no ILIKE ?)');
+      p.push(`%${query.q}%`, `%${query.q}%`, `%${query.q}%`, `%${query.q}%`); }
+    if (query.sku_id) { w.push('p.sku_id = ?'); p.push(int(query.sku_id)); }
+    return await all(
+      `SELECT p.*, s.sku_code, s.sku_name, s.unit, s.cartons_per_pallet, d.doc_no AS grn_no,
+              (SELECT COALESCE(SUM(i.quantity),0) FROM stock_items i
+                WHERE i.pallet_id = p.pallet_id AND i.status = 'IN_STOCK') AS qty_on_hand,
+              (SELECT COUNT(*) FROM stock_items i
+                WHERE i.pallet_id = p.pallet_id AND i.status = 'IN_STOCK') AS location_count
+         FROM pallets p
+         JOIN skus s ON s.sku_id = p.sku_id
+         LEFT JOIN documents d ON d.doc_id = p.doc_id
+        ${w.length ? 'WHERE ' + w.join(' AND ') : ''}
+        ORDER BY p.pallet_id DESC LIMIT ?`,
+      ...p, int(query.limit, 200));
+  }],
+  ['GET', '/api/pallets/:id', 'view', async ({ params }) => {
+    const pallet = await get(
+      `SELECT p.*, s.sku_code, s.sku_name, s.unit, s.cartons_per_pallet, d.doc_no AS grn_no
+         FROM pallets p JOIN skus s ON s.sku_id = p.sku_id
+         LEFT JOIN documents d ON d.doc_id = p.doc_id WHERE p.pallet_id = ?`, +params.id);
+    if (!pallet) throw notFound('ไม่พบพาเลท');
+    return { pallet, items: await all('SELECT * FROM v_stock WHERE pallet_id = ? ORDER BY location_code', +params.id) };
+  }],
 
   // ---------------- ประวัติการเคลื่อนย้าย ----------------
   ['GET', '/api/movements', 'view', ({ query }) => inv.listMovements({ ...query, warehouse_id: int(query.warehouse_id) })],
@@ -83,7 +118,9 @@ export const routes = [
   // ---------------- ข้อมูลหลัก: โซน ----------------
   ['GET', '/api/zones', 'view', async ({ query }) =>
     await all(`SELECT z.*, w.wh_code, w.wh_name,
-                (SELECT COUNT(*) FROM rags r WHERE r.zone_id = z.zone_id) AS rag_count
+                (SELECT COUNT(*) FROM rags r WHERE r.zone_id = z.zone_id) AS rag_count,
+                (SELECT COUNT(*) FROM locations l WHERE l.zone_id = z.zone_id AND l.rag_id IS NULL) AS floor_slots,
+                (SELECT COUNT(*) FROM locations l WHERE l.zone_id = z.zone_id) AS location_count
            FROM zones z LEFT JOIN warehouses w ON w.warehouse_id = z.warehouse_id
           ${query.warehouse_id ? 'WHERE z.warehouse_id = ?' : ''}
           ORDER BY w.wh_code, z.zone_code`,
@@ -93,9 +130,13 @@ export const routes = [
     if (await get('SELECT 1 FROM zones WHERE zone_code = ?', body.zone_code.toUpperCase()))
       throw conflict('รหัสโซนนี้ถูกใช้แล้ว — รหัสโซนต้องไม่ซ้ำกันทุกคลัง');
     if (!await get('SELECT 1 FROM warehouses WHERE warehouse_id = ?', +body.warehouse_id)) throw notFound('ไม่พบคลังสินค้า');
-    const r = await run('INSERT INTO zones (zone_code, zone_name, warehouse_id, color) VALUES (?,?,?,?)',
-      body.zone_code.toUpperCase(), body.zone_name, +body.warehouse_id, body.color || '#2563eb');
-    return await get('SELECT * FROM zones WHERE zone_id = ?', Number(r.lastInsertRowid));
+    const zoneType = ZONE_TYPES.includes(body.zone_type) ? body.zone_type : 'RACK';
+    const r = await run('INSERT INTO zones (zone_code, zone_name, warehouse_id, color, zone_type) VALUES (?,?,?,?,?)',
+      body.zone_code.toUpperCase(), body.zone_name, +body.warehouse_id, body.color || '#2563eb', zoneType);
+    const zoneId = Number(r.lastInsertRowid);
+    // โซนพื้นราบ/พื้นที่เศษไม่มีชั้นวาง จึงสร้างช่องวางให้ตรงจากจำนวนที่ระบุ
+    if (zoneType !== 'RACK') await syncFloorLocations(zoneId, int(body.floor_slots, 0));
+    return await get('SELECT * FROM zones WHERE zone_id = ?', zoneId);
   }],
   ['PUT', '/api/zones/:id', 'manage', async ({ params, body }) => {
     const z = await get('SELECT * FROM zones WHERE zone_id = ?', +params.id);
@@ -103,12 +144,23 @@ export const routes = [
     const code = (body.zone_code ?? z.zone_code).toUpperCase();
     if (await get('SELECT 1 FROM zones WHERE zone_code = ? AND zone_id <> ?', code, +params.id))
       throw conflict('รหัสโซนนี้ถูกใช้แล้ว — รหัสโซนต้องไม่ซ้ำกันทุกคลัง');
-    await run('UPDATE zones SET zone_code=?, zone_name=?, warehouse_id=?, color=?, status=? WHERE zone_id=?',
+    // เปลี่ยนชนิดโซนที่มีของอยู่แล้วจะทำให้ตำแหน่งเดิมไม่สอดคล้องกับชนิดใหม่ — ห้ามไว้ก่อน
+    const newType = ZONE_TYPES.includes(body.zone_type) ? body.zone_type : z.zone_type;
+    if (newType !== z.zone_type) {
+      const used = await get('SELECT COUNT(*) AS n FROM locations WHERE zone_id = ? AND status = \'OCCUPIED\'', +params.id);
+      if (Number(used.n) > 0) throw conflict('เปลี่ยนชนิดโซนไม่ได้ — ยังมีสินค้าอยู่ในโซนนี้');
+    }
+    await run('UPDATE zones SET zone_code=?, zone_name=?, warehouse_id=?, color=?, status=?, zone_type=? WHERE zone_id=?',
       code, body.zone_name ?? z.zone_name, body.warehouse_id ? +body.warehouse_id : z.warehouse_id,
-      body.color ?? z.color, body.status ?? z.status, +params.id);
-    for (const r of await all('SELECT rag_id FROM rags WHERE zone_id = ?', +params.id)) await syncRagLocations(r.rag_id);
+      body.color ?? z.color, body.status ?? z.status, newType, +params.id);
+    if (newType === 'RACK') {
+      for (const r of await all('SELECT rag_id FROM rags WHERE zone_id = ?', +params.id)) await syncRagLocations(r.rag_id);
+    } else if (body.floor_slots !== undefined) {
+      await syncFloorLocations(+params.id, int(body.floor_slots, 0));
+    }
     return await get('SELECT * FROM zones WHERE zone_id = ?', +params.id);
   }],
+  ['PUT', '/api/zones/:id/slots', 'manage', ({ params, body }) => syncFloorLocations(+params.id, int(body.slots, 0))],
 
   // ---------------- ข้อมูลหลัก: ชั้นวาง ----------------
   ['GET', '/api/rags', 'view', async ({ query }) => {
@@ -169,19 +221,21 @@ export const routes = [
   ['POST', '/api/skus', 'manage', async ({ body }) => {
     requireFields(body, ['sku_code', 'sku_name']);
     if (await get('SELECT 1 FROM skus WHERE sku_code = ?', body.sku_code)) throw conflict('รหัสสินค้านี้ถูกใช้แล้ว');
-    const r = await run('INSERT INTO skus (sku_code, sku_name, category, unit, barcode, product_type, shelf_life_months) VALUES (?,?,?,?,?,?,?)',
+    const r = await run('INSERT INTO skus (sku_code, sku_name, category, unit, barcode, product_type, shelf_life_months, cartons_per_pallet) VALUES (?,?,?,?,?,?,?,?)',
       body.sku_code.trim(), body.sku_name.trim(), body.category ?? null, body.unit || 'ชิ้น', body.barcode ?? null,
-      body.product_type || null, body.shelf_life_months ? Number(body.shelf_life_months) : null);
+      body.product_type || null, body.shelf_life_months ? Number(body.shelf_life_months) : null,
+      body.cartons_per_pallet ? Number(body.cartons_per_pallet) : null);
     return await get('SELECT * FROM skus WHERE sku_id = ?', Number(r.lastInsertRowid));
   }],
   ['PUT', '/api/skus/:id', 'manage', async ({ params, body }) => {
     const s = await get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
     if (!s) throw notFound('ไม่พบสินค้า');
-    await run('UPDATE skus SET sku_code=?, sku_name=?, category=?, unit=?, barcode=?, status=?, product_type=?, shelf_life_months=? WHERE sku_id=?',
+    await run('UPDATE skus SET sku_code=?, sku_name=?, category=?, unit=?, barcode=?, status=?, product_type=?, shelf_life_months=?, cartons_per_pallet=? WHERE sku_id=?',
       body.sku_code ?? s.sku_code, body.sku_name ?? s.sku_name, body.category ?? s.category,
       body.unit ?? s.unit, body.barcode ?? s.barcode, body.status ?? s.status,
       body.product_type !== undefined ? (body.product_type || null) : s.product_type,
       body.shelf_life_months !== undefined ? (body.shelf_life_months ? Number(body.shelf_life_months) : null) : s.shelf_life_months,
+      body.cartons_per_pallet !== undefined ? (body.cartons_per_pallet ? Number(body.cartons_per_pallet) : null) : s.cartons_per_pallet,
       +params.id);
     return await get('SELECT * FROM skus WHERE sku_id = ?', +params.id);
   }],
@@ -291,6 +345,10 @@ function stockFilter(query) {
     level: query.level === 'ground' || query.level === 'high' ? query.level : int(query.level),
     expiryStatus: str(query.expiry_status), expFrom: str(query.exp_from), expTo: str(query.exp_to),
     lot: str(query.lot), sort: str(query.sort) ?? 'fefo',
+    // ชนิดที่เก็บ: RACK ชั้นวาง · FLOOR พื้นราบ · BREAK พื้นที่เศษ
+    zoneType: ZONE_TYPES.includes(query.zone_type) ? query.zone_type : null,
+    looseOnly: query.loose === '1' ? true : query.loose === '0' ? false : null,
+    palletNo: str(query.pallet_no),
     limit: int(query.limit, 500),
   };
 }

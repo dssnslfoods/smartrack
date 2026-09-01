@@ -72,6 +72,19 @@ export async function saveSkuUnits(skuId, units) {
  * ใบรับสินค้าเข้าคลัง — หลายรายการ/หลาย Lot ต่อใบ พร้อมผล QC และอ้างอิงเลข PO
  * แต่ละบรรทัดระบุตำแหน่งจัดเก็บของตัวเอง (1 ตำแหน่ง = 1 รายการเหมือนเดิม)
  */
+/** เลขพาเลทรันตามเดือน เช่น PL-6909-0001 — อ่านง่ายและไม่ชนกันข้ามเดือน */
+async function nextPalletNo() {
+  const now = new Date(Date.now() + 7 * 3600_000);
+  const yy = String((now.getUTCFullYear() + 543) % 100).padStart(2, '0');
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const prefix = `PL-${yy}${mm}-`;
+  const row = await get(
+    `SELECT COALESCE(MAX(CAST(RIGHT(pallet_no, 4) AS INTEGER)), 0) AS n FROM pallets WHERE pallet_no LIKE ?`,
+    `${prefix}%`,
+  );
+  return `${prefix}${String(row.n + 1).padStart(4, '0')}`;
+}
+
 export async function createGRN(input, user) {
   const lines = input.lines;
   if (!Array.isArray(lines) || !lines.length) throw badRequest('ไม่มีรายการสินค้าในใบรับเข้า');
@@ -81,16 +94,33 @@ export async function createGRN(input, user) {
   return await tx(async () => {
     const { doc_id, doc_no } = await createDoc({ ...input, doc_type: 'GRN' }, user);
     const stored = [];
+    const pallets = [];
+    // 1 พาเลท = 1 SKU + 1 Lot เท่านั้น — บรรทัดที่เป็นสินค้าและ Lot เดียวกันใช้พาเลทใบเดียวกัน
+    // (เช่น รับของล็อตเดียวแต่กระจายเก็บหลายตำแหน่ง ยังถือเป็นพาเลทเดียวในเชิงการตามสอบ)
+    const palletOf = new Map();
     for (const l of lines) {
+      const key = `${Number(l.sku_id)}::${(l.lot_no ?? '').trim()}`;
+      if (!palletOf.has(key)) {
+        const pallet_no = await nextPalletNo();
+        const r = await run(
+          `INSERT INTO pallets (pallet_no, sku_id, lot_no, mfg_date, exp_date, doc_id) VALUES (?,?,?,?,?,?)`,
+          pallet_no, Number(l.sku_id), l.lot_no?.trim() || null,
+          l.mfg_date || null, l.exp_date || null, doc_id);
+        const pallet_id = Number(r.lastInsertRowid);
+        palletOf.set(key, pallet_id);
+        pallets.push({ pallet_id, pallet_no, sku_id: Number(l.sku_id), lot_no: l.lot_no?.trim() || null });
+      }
       const conv = await toBaseQty(l.sku_id, l.unit_name, l.quantity);
-      stored.push(await storeItem({
+      const item = await storeItem({
         sku_id: Number(l.sku_id), location_code: l.location_code,
         lot_no: l.lot_no, mfg_date: l.mfg_date || null, exp_date: l.exp_date || null,
         quantity: conv.qty, doc_id,
         note: [conv.note, l.note?.trim()].filter(Boolean).join(' · ') || null,
-      }, user));
+      }, user);
+      await run('UPDATE stock_items SET pallet_id = ? WHERE item_id = ?', palletOf.get(key), item.item_id);
+      stored.push({ ...item, pallet_id: palletOf.get(key) });
     }
-    return { ...(await docDetail(doc_id)), doc_no, stored: stored.length };
+    return { ...(await docDetail(doc_id)), doc_no, stored: stored.length, pallets };
   });
 }
 

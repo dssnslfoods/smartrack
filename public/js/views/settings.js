@@ -1,6 +1,6 @@
 // ตั้งค่าระบบ — จัดการโซน ชั้นวาง สินค้า ผู้ใช้งาน (เฉพาะ ADMIN)
-import { api } from '../api.js?v=48';
-import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=48';
+import { api } from '../api.js?v=49';
+import { h, table, pill, field, modal, toast, fmtNum, confirmBox, ROLE_LABEL, PTYPE_LABEL } from '../ui.js?v=49';
 
 export async function settingsView() {
   const tabs = ['warehouses', 'zones', 'rags', 'skus', 'channels', 'users', 'ai'];
@@ -106,6 +106,12 @@ export async function settingsView() {
   }
 
   // ======== โซน ========
+  const ZONE_TYPES = [['RACK', 'ชั้นวาง', 'blue'], ['FLOOR', 'พื้นราบ', 'amber'], ['BREAK', 'พื้นที่เศษ', 'gray']];
+  const zoneTypePill = (t) => {
+    const [, label, color] = ZONE_TYPES.find((x) => x[0] === t) ?? ZONE_TYPES[0];
+    return pill(label, color);
+  };
+
   async function loadZones() {
     const rows = await api.get('/api/zones');
     content.replaceChildren(
@@ -116,8 +122,10 @@ export async function settingsView() {
         { label: 'รหัส', key: 'zone_code', mono: true },
         { label: 'ชื่อโซน', key: 'zone_name' },
         { label: 'คลังสินค้า', value: (r) => (r.wh_code ? `${r.wh_code} — ${r.wh_name}` : '—') },
+        { label: 'ชนิดโซน', value: (r) => zoneTypePill(r.zone_type) },
         { label: 'สถานะ', value: (r) => pill(r.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิด', r.status === 'ACTIVE' ? 'green' : 'gray') },
-        { label: 'RACK', key: 'rag_count', num: true },
+        // โซนพื้นราบ/พื้นที่เศษไม่มี RACK ตัวเลขในช่องนี้จึงต้องเป็นจำนวนช่องวางแทน ไม่งั้นจะขึ้น 0 ทุกแถว
+        { label: 'RACK / ช่องวาง', value: (r) => (r.zone_type === 'RACK' || !r.zone_type ? r.rag_count : `${fmtNum(r.floor_slots ?? 0)} ช่อง`), num: true },
         { label: '', value: (r) => h('button', { class: 'btn ghost', title: 'แก้ไขชื่อโซน คลังที่สังกัด สีบนแผนผัง หรือปิดใช้งานโซนนี้', onclick: () => zoneForm(r) }, 'แก้ไข') },
       ], rows));
   }
@@ -130,6 +138,15 @@ export async function settingsView() {
     const whSel = h('select', {},
       ...houses.map((w) => h('option', { value: w.warehouse_id, selected: w.warehouse_id === z?.warehouse_id }, `${w.wh_code} — ${w.wh_name}`)));
     const color = h('input', { type: 'color', value: z?.color ?? '#2563eb' });
+    const ztype = h('select', {},
+      ...ZONE_TYPES.map(([v, label]) => h('option', { value: v, selected: (z?.zone_type ?? 'RACK') === v }, label)));
+    const slots = h('input', { type: 'number', min: '1', max: '999', value: String(z?.floor_slots || 10) });
+    const slotsField = field('จำนวนช่องวาง', slots, 'ระบบจะสร้างรหัสตำแหน่งให้อัตโนมัติ เช่น FLR-01, FLR-02',
+      'จำนวนช่องวางพาเลทบนพื้นของโซนนี้ ระบบจะสร้างรหัสตำแหน่งให้ครบทุกช่องเอง — ลดจำนวนลงได้เฉพาะช่องที่ยังว่าง');
+    // ชนิดโซนกำหนดว่าตำแหน่งมาจากไหน RACK มาจากชั้นวาง ส่วน FLOOR/BREAK มาจากช่องบนพื้น
+    const syncSlots = () => { slotsField.style.display = ztype.value === 'RACK' ? 'none' : ''; };
+    ztype.onchange = syncSlots;
+    syncSlots();
     const status = z ? h('select', {},
       h('option', { value: 'ACTIVE', selected: z.status === 'ACTIVE' }, 'ใช้งาน'),
       h('option', { value: 'INACTIVE', selected: z.status === 'INACTIVE' }, 'ปิดใช้งาน')) : null;
@@ -138,6 +155,9 @@ export async function settingsView() {
       h('div', {},
         h('div', { class: 'grid g2' }, field('รหัสโซน', code, 'ต้องไม่ซ้ำทุกคลัง', 'รหัสย่อของโซน เช่น FG (สินค้าสำเร็จรูป), RM (วัตถุดิบ) ต้องไม่ซ้ำทุกคลัง'), field('ชื่อโซน', name, null, 'ชื่อเต็มของโซน เช่น โซนสินค้าสำเร็จรูป')),
         h('div', { class: 'grid g2' }, field('คลังสินค้า', whSel, null, 'โซนนี้อยู่ในคลังไหน'), field('สีบนผัง', color, null, 'สีที่ใช้แสดง RACK ของโซนนี้บนแผนผังคลัง')),
+        h('div', { class: 'grid g2' },
+          field('ชนิดโซน', ztype, null, 'ชั้นวาง = วางบน RACK ต้องสร้าง RACK ต่อ · พื้นราบ = วางพาเลทกับพื้นโดยตรง · พื้นที่เศษ = ที่เก็บของเศษที่แกะออกจากลัง — เปลี่ยนชนิดไม่ได้ถ้ายังมีของค้างในโซน'),
+          slotsField),
         status ? field('สถานะ', status, null, 'ปิดใช้งาน = ไม่แสดงในรายการเลือก แต่ข้อมูลเดิมยังอยู่') : null),
       [
         h('button', { class: 'btn', onclick: () => m.close() }, 'ยกเลิก'),
@@ -150,11 +170,13 @@ export async function settingsView() {
             catch (err) { toast(err.message, 'err'); }
           },
         }, '🗑 ลบ') : null,
-        h('button', { class: 'btn primary', title: 'บันทึกข้อมูลโซน — โซนใหม่จะพร้อมให้เลือกทันทีตอนสร้าง RACK', onclick: async () => {
+        h('button', { class: 'btn primary', title: 'บันทึกข้อมูลโซน — โซนชั้นวางจะพร้อมให้เลือกตอนสร้าง RACK ส่วนโซนพื้นราบ/พื้นที่เศษระบบจะสร้างช่องวางให้ครบตามจำนวนที่กรอกทันที', onclick: async () => {
           try {
             const body = {
               zone_code: code.value.trim(), zone_name: name.value.trim(),
               warehouse_id: Number(whSel.value), color: color.value,
+              zone_type: ztype.value,
+              ...(ztype.value === 'RACK' ? {} : { floor_slots: Number(slots.value) }),
               ...(status ? { status: status.value } : {}),
             };
             z ? await api.put(`/api/zones/${z.zone_id}`, body) : await api.post('/api/zones', body);
@@ -235,6 +257,7 @@ export async function settingsView() {
         { label: 'หมวด', key: 'category' },
         { label: 'หน่วย', key: 'unit' },
         { label: 'อายุ (ด.)', value: (r) => r.shelf_life_months ?? '—', num: true },
+        { label: 'ลัง/พาเลท', value: (r) => r.cartons_per_pallet ?? '—', num: true },
         { label: 'บาร์โค้ด', key: 'barcode', mono: true },
         { label: 'จัดเก็บอยู่', value: (r) => `${r.locations_used} ตำแหน่ง`, num: true },
         { label: 'ยอดรวม', value: (r) => fmtNum(r.qty_in_stock), num: true },
@@ -266,6 +289,7 @@ export async function settingsView() {
       h('option', { value: '' }, '— ไม่ระบุ —'),
       ...Object.entries(PTYPE_LABEL).map(([v, l]) => h('option', { value: v, selected: s?.product_type === v }, l)));
     const shelfLife = h('input', { type: 'number', min: '1', value: s?.shelf_life_months ?? '', placeholder: 'เช่น 36' });
+    const cartons = h('input', { type: 'number', min: '1', value: s?.cartons_per_pallet ?? '', placeholder: 'เช่น 40' });
     const status = s ? h('select', {},
       h('option', { value: 'ACTIVE', selected: s.status === 'ACTIVE' }, 'ใช้งาน'),
       h('option', { value: 'INACTIVE', selected: s.status === 'INACTIVE' }, 'ปิดใช้งาน')) : null;
@@ -289,7 +313,9 @@ export async function settingsView() {
         h('div', { class: 'grid g2' }, field('รหัสสินค้า', code, null, 'รหัสเฉพาะของสินค้า (SKU Code) ต้องไม่ซ้ำกัน'), field('ชื่อสินค้า', name, null, 'ชื่อเต็มของสินค้าที่แสดงในระบบ')),
         h('div', { class: 'grid g2' }, field('ประเภทสินค้า', ptype, null, 'ประเภทหลัก เช่น เครื่องสำอาง สกินแคร์ ใช้จัดกลุ่มในรายงาน'), field('หมวดหมู่', h('div', {}, cat, catCustom), null, 'หมวดย่อยของสินค้า เช่น ครีม สบู่ แชมพู')),
         h('div', { class: 'grid g2' }, field('หน่วยนับ (หน่วยฐาน)', unit, null, 'หน่วยนับเล็กสุดที่ใช้ในระบบ เช่น ชิ้น หลอด ซอง'), field('อายุสินค้า (เดือน)', shelfLife, 'ใช้คำนวณ % อายุคงเหลือเมื่อ Lot ไม่ระบุวันผลิต', 'ระยะเวลาตั้งแต่ผลิตถึงหมดอายุ ใช้คำนวณ % อายุคงเหลือเมื่อ Lot ไม่ระบุวันผลิต')),
-        field('บาร์โค้ด', barcode, null, 'รหัสบาร์โค้ดบนตัวสินค้า ใช้สแกนค้นหาเร็ว'),
+        h('div', { class: 'grid g2' },
+          field('บาร์โค้ด', barcode, null, 'รหัสบาร์โค้ดบนตัวสินค้า ใช้สแกนค้นหาเร็ว'),
+          field('จำนวนลังต่อ 1 พาเลท', cartons, 'ไม่บังคับ', 'วางสินค้านี้ได้กี่ลังต่อพาเลท 1 ตัว ใช้ประมาณจำนวนพาเลทที่ต้องใช้และช่องวางที่ต้องเตรียม เว้นว่างได้ถ้ายังไม่ทราบ')),
         h('div', { class: 'field' },
           h('label', {}, 'หน่วยนับเพิ่มเติม (เช่น ลัง / โหล)'),
           unitsBox,
@@ -305,6 +331,7 @@ export async function settingsView() {
               barcode: barcode.value.trim() || null, ...(status ? { status: status.value } : {}),
               product_type: ptype.value || null,
               shelf_life_months: shelfLife.value ? Number(shelfLife.value) : null,
+              cartons_per_pallet: cartons.value ? Number(cartons.value) : null,
             };
             const saved = s ? await api.put(`/api/skus/${s.sku_id}`, body) : await api.post('/api/skus', body);
             const units = unitRows

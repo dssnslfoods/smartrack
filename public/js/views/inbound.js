@@ -1,6 +1,6 @@
 // รับสินค้าเข้าคลัง (GRN) — หลายรายการ/หลาย Lot ต่อใบ + QC + อ้างอิงเลข PO
-import { api, auth } from '../api.js?v=48';
-import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles , progress } from '../ui.js?v=48';
+import { api, auth } from '../api.js?v=49';
+import { h, field, table, pill, toast, fmtNum, fmtDateTime, modal, DOC_LABEL, locationPickerModal, pickFiles , progress } from '../ui.js?v=49';
 
 export async function inboundView() {
   const [skus, zones, aiStatus] = await Promise.all([
@@ -130,6 +130,36 @@ export async function inboundView() {
     }
   }
 
+  /** สรุปพาเลทที่เพิ่งสร้าง พร้อมปุ่มพิมพ์ป้ายไปติดพาเลทจริง */
+  function showPallets(res, items) {
+    const bySku = new Map(skus.map((s) => [String(s.sku_id), s]));
+    const rows = res.pallets.map((p) => {
+      const s = bySku.get(String(p.sku_id));
+      // รวมจำนวนของทุกบรรทัดที่ใช้พาเลทใบนี้ (Lot เดียวกันแต่กระจายหลายตำแหน่ง)
+      const qty = items
+        .filter((l) => String(l.sku_id) === String(p.sku_id) && (l.lot_no?.trim() || null) === p.lot_no)
+        .reduce((sum, l) => sum + Number(l.quantity || 0), 0);
+      const locs = items
+        .filter((l) => String(l.sku_id) === String(p.sku_id) && (l.lot_no?.trim() || null) === p.lot_no)
+        .map((l) => l.location_code);
+      return { ...p, sku_code: s?.sku_code, sku_name: s?.sku_name, unit: s?.unit, qty, locs };
+    });
+
+    const m = modal(`🟫 พาเลทที่สร้างจากใบรับเข้า ${res.doc_no}`,
+      h('div', {},
+        h('p', { class: 'muted', style: 'margin-top:0' },
+          '1 พาเลท = 1 สินค้า + 1 Lot — เขียนเลขพาเลทติดไว้ที่พาเลทจริงก่อนนำไปจัดเก็บ'),
+        table([
+          { label: 'เลขพาเลท', key: 'pallet_no', mono: true },
+          { label: 'สินค้า', value: (p) => h('div', {}, p.sku_name ?? '—',
+              h('div', { class: 'mono muted', style: 'font-size:12px' }, p.sku_code ?? '')) },
+          { label: 'Lot', value: (p) => p.lot_no ?? '—', mono: true },
+          { label: 'จำนวน', value: (p) => `${fmtNum(p.qty)} ${p.unit ?? ''}`, num: true },
+          { label: 'เก็บที่', value: (p) => p.locs.join(', '), mono: true },
+        ], rows)),
+      [h('button', { class: 'btn primary', title: 'ปิดหน้าต่าง — ดูเลขพาเลทย้อนหลังได้จากหน้าค้นหา โดยพิมพ์เลขพาเลทลงช่องค้นหา', onclick: () => m.close() }, 'รับทราบ')]);
+  }
+
   function applyScan(r) {
     if (r.ref_no && !refNo.value) refNo.value = r.ref_no;
     if (r.party && !party.value) party.value = r.party;
@@ -219,6 +249,9 @@ export async function inboundView() {
         lines: items,
       });
       toast(`บันทึกใบรับเข้า ${res.doc_no} — จัดเก็บ ${res.stored} รายการเรียบร้อย`);
+      // พาเลทถูกสร้างให้อัตโนมัติตอนรับเข้า (1 พาเลท = 1 SKU + 1 Lot)
+      // ต้องแสดงเลขให้เห็นทันที เพราะพนักงานต้องเขียนติดพาเลทจริงก่อนนำไปเก็บ
+      if (res.pallets?.length) showPallets(res, items);
       lines.length = 0;
       linesBox.replaceChildren();
       addLine();

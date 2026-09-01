@@ -34,15 +34,22 @@ export async function searchStock(q, { zoneId = null, ragId = null, warehouseId 
                                  minDays = null, maxDays = null, minQty = null, maxQty = null,
                                  minPct = null, maxPct = null, productType = null, category = null,
                                  level = null, expiryStatus = null, expFrom = null, expTo = null,
-                                 lot = null, sort = 'fefo', limit = 500 } = {}) {
+                                 lot = null, zoneType = null, looseOnly = null, palletNo = null,
+                                 sort = 'fefo', limit = 500 } = {}) {
   const term = (q ?? '').trim();
   const params = [];
   let where = '1=1';
   if (term) {
+    // ค้นด้วยเลขพาเลทได้ด้วย — หน้างานมักถือใบพาเลทมาถามว่าของกองนี้อยู่ไหน
     where += ` AND (s.sku_code ILIKE ? OR s.sku_name ILIKE ? OR v.lot_no ILIKE ?
-                    OR v.location_code ILIKE ? OR v.rag_no ILIKE ? OR s.barcode = ?)`;
-    params.push(like(term), like(term), like(term), like(term), like(term), term);
+                    OR v.location_code ILIKE ? OR v.rag_no ILIKE ? OR v.pallet_no ILIKE ? OR s.barcode = ?)`;
+    params.push(like(term), like(term), like(term), like(term), like(term), like(term), term);
   }
+  // แยกดูตามที่เก็บจริง: ชั้นวาง · พื้นราบ · พื้นที่เศษที่แกะจากลังแล้ว
+  if (zoneType) { where += ' AND v.zone_type = ?'; params.push(zoneType); }
+  if (looseOnly === true) where += ' AND v.is_loose = true';
+  else if (looseOnly === false) where += ' AND v.is_loose = false';
+  if (palletNo) { where += ' AND v.pallet_no ILIKE ?'; params.push(like(palletNo)); }
   if (warehouseId) { where += ' AND v.warehouse_id = ?'; params.push(warehouseId); }
   if (zoneId) { where += ' AND v.zone_id = ?'; params.push(zoneId); }
   if (ragId) { where += ' AND v.rag_id = ?'; params.push(ragId); }
@@ -78,6 +85,81 @@ export async function searchStock(q, { zoneId = null, ragId = null, warehouseId 
       LIMIT ?`,
     ...params, limit,
   )).map((r) => ({ ...r, expiry: expiryState(r.days_to_expiry), needs_forklift: r.level > 1 }));
+}
+
+/**
+ * แกะลัง — แยกของบางส่วนจากพาเลทเดิมไปวางที่พื้นที่เศษ
+ *
+ * กฎที่ห้ามละเมิด: พื้นที่เศษ 1 ช่อง = 1 SKU + 1 Lot เท่านั้น ห้ามคละ Lot
+ * (บังคับได้เองด้วยกติกาเดิม "1 ตำแหน่ง = 1 รายการ" เพราะแต่ละรายการมี Lot เดียว)
+ * ของที่แกะแล้วติดธง is_loose ไว้ จะได้ค้นเจอแยกจากของที่ยังเป็นลังเต็ม
+ */
+export async function breakCarton({ item_id, quantity, location_code, note } = {}, user) {
+  const qty = Number(quantity);
+  if (!Number.isFinite(qty) || qty <= 0) throw badRequest('ระบุจำนวนที่แกะออกมา');
+  if (!location_code) throw badRequest('ระบุช่องในพื้นที่เศษที่จะนำไปวาง');
+
+  return await tx(async () => {
+    const src = await get('SELECT * FROM v_stock WHERE item_id = ?', Number(item_id));
+    if (!src) throw notFound('ไม่พบสินค้าต้นทาง หรือถูกหยิบออกไปแล้ว');
+    if (src.quantity < qty) throw conflict(`ต้นทางเหลือ ${src.quantity} ${src.unit} แกะออก ${qty} ไม่ได้`);
+
+    const dest = await locationByCode(location_code);
+    if (!dest) throw notFound(`ไม่พบตำแหน่ง ${location_code}`);
+    if (dest.zone_type !== 'BREAK')
+      throw badRequest(`${dest.location_code} ไม่ใช่พื้นที่เศษ — ของที่แกะจากลังต้องวางในโซนแบบ "พื้นที่เศษ" เท่านั้น`);
+
+    // ถ้าช่องปลายทางมีของอยู่แล้ว ต้องเป็นสินค้าและ Lot เดียวกันเท่านั้น จึงรวมกองได้
+    const cur = await get(
+      `SELECT * FROM stock_items WHERE location_id = ? AND status = 'IN_STOCK'`, dest.location_id);
+    if (cur) {
+      const sameLot = cur.sku_id === src.sku_id && (cur.lot_no ?? '') === (src.lot_no ?? '');
+      if (!sameLot) {
+        const other = await get('SELECT sku_code FROM skus WHERE sku_id = ?', cur.sku_id);
+        throw conflict(
+          `${dest.location_code} มี ${other?.sku_code ?? 'สินค้าอื่น'} Lot ${cur.lot_no ?? '-'} อยู่แล้ว — ` +
+          'พื้นที่เศษห้ามคละ Lot กัน กรุณาเลือกช่องว่างอื่น', 'LOOSE_LOT_MIX');
+      }
+    }
+
+    // ตัดจากต้นทาง
+    await run('UPDATE stock_items SET quantity = quantity - ?, updated_at = (now() AT TIME ZONE \'Asia/Bangkok\') WHERE item_id = ?',
+      qty, src.item_id);
+    const left = src.quantity - qty;
+    if (left === 0) {
+      await run(`UPDATE stock_items SET status = 'REMOVED', location_id = NULL WHERE item_id = ?`, src.item_id);
+      await run(`UPDATE locations SET status = 'EMPTY' WHERE location_id = ?`, src.location_id);
+    }
+
+    // เพิ่มที่ปลายทาง (รวมกองเดิมถ้า Lot ตรงกัน)
+    let destItemId;
+    if (cur) {
+      await run('UPDATE stock_items SET quantity = quantity + ?, is_loose = true, updated_at = (now() AT TIME ZONE \'Asia/Bangkok\') WHERE item_id = ?',
+        qty, cur.item_id);
+      destItemId = cur.item_id;
+    } else {
+      const r = await run(
+        `INSERT INTO stock_items (sku_id, location_id, lot_no, mfg_date, exp_date, quantity, pallet_id, is_loose, note)
+         VALUES (?,?,?,?,?,?,?,true,?)`,
+        src.sku_id, dest.location_id, src.lot_no, src.mfg_date, src.exp_date, qty, src.pallet_id,
+        note?.trim() || null);
+      destItemId = Number(r.lastInsertRowid);
+      await run(`UPDATE locations SET status = 'OCCUPIED' WHERE location_id = ?`, dest.location_id);
+    }
+
+    await run(
+      `INSERT INTO movements (movement_type, item_id, sku_id, lot_no, quantity, from_location_id, to_location_id, user_id, note)
+       VALUES ('MOVE',?,?,?,?,?,?,?,?)`,
+      destItemId, src.sku_id, src.lot_no, qty, src.location_id, dest.location_id, user.user_id,
+      [`แกะลังไปพื้นที่เศษ`, note?.trim()].filter(Boolean).join(' · '));
+
+    return {
+      moved: qty,
+      from: { location_code: src.location_code, remaining: left },
+      to: { location_code: dest.location_code, item_id: destItemId },
+      sku_code: src.sku_code, lot_no: src.lot_no,
+    };
+  });
 }
 
 /** ค้นหาแบบรวมสำหรับช่องค้นหาด้านบน */
