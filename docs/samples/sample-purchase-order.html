@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>ใบสั่งซื้อ PO (ตัวอย่างทดสอบ)</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  html { background: #fff; }
+  body {
+    font-family: "Sarabun", "Noto Sans Thai", "Thonburi", "Helvetica Neue", sans-serif;
+    font-size: 12px; color: #111; background: #fff; margin: 0; line-height: 1.45;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .stamp {
+    border: 2px dashed #b91c1c; color: #b91c1c; font-weight: 700; text-align: center;
+    padding: 6px; margin-bottom: 12px; letter-spacing: .5px; font-size: 12.5px;
+  }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+  .co-name { font-size: 17px; font-weight: 800; }
+  .co small { display: block; color: #444; font-size: 11px; }
+  .doc-title { font-size: 20px; font-weight: 800; text-align: right; letter-spacing: 1px; }
+  .meta { margin-top: 6px; font-size: 11.5px; text-align: right; }
+  .meta b { display: inline-block; min-width: 92px; text-align: left; }
+  hr { border: 0; border-top: 2px solid #111; margin: 10px 0; }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; margin: 10px 0 14px; }
+  .party { border: 1px solid #ccc; border-radius: 4px; padding: 8px 12px; font-size: 12px; }
+  .party b.tag { display: block; font-size: 10.5px; color: #666; margin-bottom: 3px; letter-spacing: .3px; }
+  .party .name { font-weight: 700; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th, td { border: 1px solid #666; padding: 5px 6px; vertical-align: top; }
+  th { background: #e8e8e8; font-size: 11px; text-align: center; }
+  td.c { text-align: center; }
+  td.r { text-align: right; }
+  .code { font-family: "SF Mono", Menlo, monospace; font-size: 10.5px; }
+  tfoot td { font-weight: 700; }
+  tfoot tr.grand td { background: #f3f4f6; font-size: 13px; }
+  .terms { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; margin-top: 12px; font-size: 11.5px; }
+  .terms b { display: inline-block; min-width: 96px; }
+  .note { margin-top: 10px; font-size: 11px; color: #333; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 4px; padding: 8px 10px; }
+  .foot { display: flex; justify-content: space-between; margin-top: 30px; gap: 30px; }
+  .sign { flex: 1; text-align: center; font-size: 11px; }
+  .sign .line { border-bottom: 1px dotted #333; height: 34px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="stamp">
+  ★ เอกสารตัวอย่างสำหรับทดสอบระบบเท่านั้น — ไม่ใช่เอกสารทางการค้าจริง · SPECIMEN FOR SYSTEM TESTING ONLY ★
+</div>
+
+<div class="head">
+  <div class="co">
+    <div class="co-name">EVERYDAYHAPPY CO., LTD.</div>
+    <small>De Leaf Thanaka — ผู้ผลิตเครื่องสำอาง/สกินแคร์</small>
+    <small>เลขที่ 168 ถนนวิภาวดีรังสิต แขวงตัวอย่าง เขตสมมติ กรุงเทพฯ 10900 (ที่อยู่ทดสอบ)</small>
+    <small>โทร. 02-111-1111 · ผู้ติดต่อ: ฝ่ายจัดซื้อ</small>
+  </div>
+  <div>
+    <div class="doc-title">ใบสั่งซื้อ / Purchase Order</div>
+    <div class="meta">
+      <div><b>เลขที่ PO</b> PO-6909-0099</div>
+      <div><b>วันที่สั่งซื้อ</b> 25 สิงหาคม 2569</div>
+      <div><b>ต้องการรับของ</b> 5 กันยายน 2569</div>
+      <div><b>ผู้จัดทำ</b> ฝ่ายจัดซื้อ</div>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<div class="parties">
+  <div class="party">
+    <b class="tag">ผู้ขาย / SUPPLIER</b>
+    <div class="name">บริษัท วัตถุดิบทดสอบ จำกัด (สมมติ)</div>
+    99 ถนนสมมติ ตำบลทดลอง อำเภอตัวอย่าง จังหวัดสมุทรปราการ 10270<br>
+    โทร. 02-222-2222 · เลขผู้เสียภาษี 0-0000-00000-00-0 (ตัวอย่าง)
+  </div>
+  <div class="party">
+    <b class="tag">ส่งสินค้าไปที่ / DELIVER TO</b>
+    <div class="name">คลังสินค้าวิภาวดี (WH1)</div>
+    ถนนวิภาวดีรังสิต กรุงเทพฯ — แผนกรับเข้าสินค้า<br>
+    เวลารับของ 08:30–16:00 น. (จันทร์–เสาร์)
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:26px">#</th>
+      <th style="width:100px">รหัสสินค้า</th>
+      <th>รายการ</th>
+      <th style="width:70px">จำนวน</th>
+      <th style="width:50px">หน่วย</th>
+      <th style="width:70px">ราคา/หน่วย</th>
+      <th style="width:80px">รวม (บาท)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="c">1</td>
+      <td class="code">RM-TNK-EXT25</td>
+      <td>สารสกัดทานาคา ขนาดบรรจุ 25 กก./ถัง</td>
+      <td class="r">20</td>
+      <td class="c">ถัง</td>
+      <td class="r">3,200.00</td>
+      <td class="r">64,000.00</td>
+    </tr>
+    <tr>
+      <td class="c">2</td>
+      <td class="code">RM-COC-OIL20</td>
+      <td>น้ำมันมะพร้าวสกัดเย็น ขนาดบรรจุ 20 ลิตร/ถัง</td>
+      <td class="r">15</td>
+      <td class="c">ถัง</td>
+      <td class="r">1,850.00</td>
+      <td class="r">27,750.00</td>
+    </tr>
+    <tr>
+      <td class="c">3</td>
+      <td class="code">PK-BOX-A4STD</td>
+      <td>กล่องกระดาษมาตรฐานสำหรับบรรจุสินค้า</td>
+      <td class="r">5,000</td>
+      <td class="c">ใบ</td>
+      <td class="r">6.50</td>
+      <td class="r">32,500.00</td>
+    </tr>
+    <tr>
+      <td class="c">4</td>
+      <td class="code">PK-BTL-CL300</td>
+      <td>ขวดพลาสติกใส ขนาด 300 มล. พร้อมฝา</td>
+      <td class="r">8,000</td>
+      <td class="c">ใบ</td>
+      <td class="r">3.20</td>
+      <td class="r">25,600.00</td>
+    </tr>
+    <tr>
+      <td class="c">5</td>
+      <td class="code">PK-TUB-50W</td>
+      <td>หลอดครีมพลาสติก 50 กรัม สีขาว</td>
+      <td class="r">6,000</td>
+      <td class="c">ใบ</td>
+      <td class="r">2.80</td>
+      <td class="r">16,800.00</td>
+    </tr>
+    <tr>
+      <td class="c">6</td>
+      <td class="code">RM-GLY-VEG10</td>
+      <td>กลีเซอรีนสกัดจากพืช ขนาดบรรจุ 10 กก./ถัง (วัตถุดิบใหม่ รอขึ้นทะเบียน)</td>
+      <td class="r">10</td>
+      <td class="c">ถัง</td>
+      <td class="r">1,450.00</td>
+      <td class="r">14,500.00</td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr><td colspan="6" class="c">รวมเป็นเงิน</td><td class="r">181,150.00</td></tr>
+    <tr><td colspan="6" class="c">ภาษีมูลค่าเพิ่ม 7%</td><td class="r">12,680.50</td></tr>
+    <tr class="grand"><td colspan="6" class="c">รวมทั้งสิ้น</td><td class="r">193,830.50</td></tr>
+  </tfoot>
+</table>
+
+<div class="terms">
+  <div><b>เงื่อนไขชำระเงิน:</b> เครดิต 30 วัน นับจากวันที่ส่งของ</div>
+  <div><b>เงื่อนไขการส่ง:</b> ส่งถึงคลังผู้ซื้อ (DDP)</div>
+</div>
+
+<div class="note">
+  <b>หมายเหตุ:</b> เอกสารนี้เป็นใบสั่งซื้อ (PO) ยังไม่ใช่ใบส่งของจริง — เลข Lot และวันหมดอายุของแต่ละรายการ
+  จะออกโดยผู้ขายตอนจัดส่งจริง กรุณาตรวจสอบและกรอกข้อมูลเพิ่มเติมตอนรับสินค้าเข้าคลัง
+</div>
+
+<div class="foot">
+  <div class="sign"><div class="line"></div>ผู้จัดทำใบสั่งซื้อ / วันที่</div>
+  <div class="sign"><div class="line"></div>ผู้อนุมัติสั่งซื้อ / วันที่</div>
+  <div class="sign"><div class="line"></div>ผู้ขายรับทราบ / วันที่</div>
+</div>
+
+</body>
+</html>
