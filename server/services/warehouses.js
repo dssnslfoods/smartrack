@@ -104,12 +104,34 @@ export async function warehouseLayout(id) {
     id,
   );
 
-  autoPlace(racks, warehouse);
+  // โซนพื้นราบ/พื้นที่เศษเป็น "พื้นที่" บนผัง ไม่ใช่ชั้นวาง จึงนับช่องวางของตัวเอง
+  const areas = await all(
+    `SELECT z.zone_id, z.zone_code, z.zone_name, z.zone_type, z.color, z.status,
+            z.pos_x, z.pos_y, z.span_x, z.span_y,
+            (SELECT COUNT(*) FROM locations l WHERE l.zone_id = z.zone_id AND l.rag_id IS NULL) AS total,
+            (SELECT COUNT(*) FROM locations l WHERE l.zone_id = z.zone_id AND l.rag_id IS NULL AND l.status='OCCUPIED') AS occupied,
+            (SELECT COUNT(*) FROM locations l WHERE l.zone_id = z.zone_id AND l.rag_id IS NULL AND l.status='DISABLED') AS disabled
+       FROM zones z
+      WHERE z.warehouse_id = ? AND z.zone_type <> 'RACK'
+      ORDER BY z.zone_code`,
+    id,
+  );
+
+  await autoPlace(racks, areas, warehouse);
 
   for (const r of racks) {
     const usable = r.total - r.disabled;
     r.usable = usable;
     r.usage_pct = usable ? Math.round((r.occupied / usable) * 1000) / 10 : 0;
+  }
+  for (const a of areas) {
+    const usable = a.total - a.disabled;
+    a.usable = usable;
+    a.usage_pct = usable ? Math.round((a.occupied / usable) * 1000) / 10 : 0;
+    // ช่องวางของโซนพื้นราบ ใช้วาดเป็นตารางย่อยในบล็อกเหมือน mini-rack ของชั้นวาง
+    a.slots = await all(
+      `SELECT location_id, location_code, slot_no, status FROM locations
+        WHERE zone_id = ? AND rag_id IS NULL ORDER BY slot_no`, a.zone_id);
   }
 
   const allCells = await all(
@@ -121,39 +143,43 @@ export async function warehouseLayout(id) {
   for (const c of allCells) (cellsByRack[c.rag_id] ??= []).push(c);
   for (const r of racks) r.cells = cellsByRack[r.rag_id] ?? [];
 
-  return { warehouse, zones, racks };
+  return { warehouse, zones, racks, areas };
 }
 
 /** วางชั้นวางที่ยังไม่มีตำแหน่ง ลงช่องว่างแรกที่พอดี (คำนึงถึงขนาดที่กินหลายช่อง) */
-async function autoPlace(racks, warehouse) {
-  const pending = racks.filter((r) => r.pos_x === null || r.pos_y === null);
+async function autoPlace(racks, areas, warehouse) {
+  // ชั้นวางกับโซนพื้นราบวางอยู่บนผังเดียวกัน จึงต้องกันทับกันข้ามชนิดด้วย
+  const boxes = [
+    ...racks.map((r) => ({ kind: 'rack', ref: r, ...rackSpan(r) })),
+    ...areas.map((a) => ({ kind: 'area', ref: a, cols: Math.max(1, a.span_x), rows: Math.max(1, a.span_y) })),
+  ];
+  const pending = boxes.filter((b) => b.ref.pos_x === null || b.ref.pos_y === null);
   if (!pending.length) return;
 
   const taken = new Set();
-  for (const r of racks) {
-    if (r.pos_x === null || r.pos_y === null) continue;
-    const s = rackSpan(r);
-    for (let dy = 0; dy < s.rows; dy++)
-      for (let dx = 0; dx < s.cols; dx++)
-        taken.add(`${r.pos_x + dx}:${r.pos_y + dy}`);
+  for (const b of boxes) {
+    if (b.ref.pos_x === null || b.ref.pos_y === null) continue;
+    for (let dy = 0; dy < b.rows; dy++)
+      for (let dx = 0; dx < b.cols; dx++)
+        taken.add(`${b.ref.pos_x + dx}:${b.ref.pos_y + dy}`);
   }
 
   await tx(async () => {
-    for (const r of pending) {
-      const s = rackSpan(r);
+    for (const b of pending) {
       let placed = false;
-      for (let y = 0; !placed && y <= warehouse.grid_rows - s.rows; y++) {
-        for (let x = 0; !placed && x <= warehouse.grid_cols - s.cols; x++) {
+      for (let y = 0; !placed && y <= warehouse.grid_rows - b.rows; y++) {
+        for (let x = 0; !placed && x <= warehouse.grid_cols - b.cols; x++) {
           let ok = true;
-          for (let dy = 0; ok && dy < s.rows; dy++)
-            for (let dx = 0; ok && dx < s.cols; dx++)
+          for (let dy = 0; ok && dy < b.rows; dy++)
+            for (let dx = 0; ok && dx < b.cols; dx++)
               if (taken.has(`${x + dx}:${y + dy}`)) ok = false;
           if (ok) {
-            for (let dy = 0; dy < s.rows; dy++)
-              for (let dx = 0; dx < s.cols; dx++)
+            for (let dy = 0; dy < b.rows; dy++)
+              for (let dx = 0; dx < b.cols; dx++)
                 taken.add(`${x + dx}:${y + dy}`);
-            r.pos_x = x; r.pos_y = y;
-            await run('UPDATE rags SET pos_x=?, pos_y=? WHERE rag_id=?', x, y, r.rag_id);
+            b.ref.pos_x = x; b.ref.pos_y = y;
+            if (b.kind === 'rack') await run('UPDATE rags SET pos_x=?, pos_y=? WHERE rag_id=?', x, y, b.ref.rag_id);
+            else await run('UPDATE zones SET pos_x=?, pos_y=? WHERE zone_id=?', x, y, b.ref.zone_id);
             placed = true;
           }
         }
@@ -191,6 +217,16 @@ export async function moveRack(ragId, { pos_x, pos_y }) {
            y < o.pos_y + os.rows && y + s.rows > o.pos_y;
   });
 
+  // ชั้นวางกับโซนพื้นราบอยู่บนผังเดียวกัน — ทับโซนพื้นราบไม่ได้ และสลับกันไม่ได้ด้วย
+  // (ขนาดต่างกันคนละแบบ สลับแล้วมักล้นขอบ) จึงบอกให้ย้ายไปช่องอื่นแทน
+  const areaHit = (await all(
+    `SELECT zone_code, zone_name, pos_x, pos_y, span_x, span_y FROM zones
+      WHERE warehouse_id = ? AND zone_type <> 'RACK' AND pos_x IS NOT NULL`, rack.warehouse_id))
+    .filter((a) => x < a.pos_x + a.span_x && x + s.cols > a.pos_x &&
+                   y < a.pos_y + a.span_y && y + s.rows > a.pos_y);
+  if (areaHit.length)
+    throw conflict(`ตำแหน่งนี้ทับกับพื้นที่ ${areaHit.map((a) => a.zone_code).join(', ')} — เลือกช่องอื่น`);
+
   if (conflicts.length > 1)
     throw conflict(`ตำแหน่งนี้ทับกับชั้นวางหลายตัว: ${conflicts.map((c) => c.rag_no).join(', ')}`);
 
@@ -206,6 +242,49 @@ export async function moveRack(ragId, { pos_x, pos_y }) {
   });
 
   return { rag_id: ragId, pos_x: x, pos_y: y, swapped_with: conflicts[0]?.rag_id ?? null };
+}
+
+/**
+ * ย้าย/ปรับขนาดพื้นที่ราบบนผังคลัง
+ * พื้นที่ราบเป็นสี่เหลี่ยมที่กำหนดขนาดเองได้ ต่างจากชั้นวางที่ขนาดมาจากจำนวนชั้น/ตอน
+ */
+export async function moveArea(zoneId, { pos_x, pos_y, span_x, span_y }) {
+  const z = await get('SELECT * FROM zones WHERE zone_id = ?', Number(zoneId));
+  if (!z) throw notFound('ไม่พบโซน');
+  if (z.zone_type === 'RACK') throw badRequest('โซนแบบชั้นวางจัดตำแหน่งผ่านชั้นวางแต่ละตัว ไม่ใช่ทั้งโซน');
+  if (!z.warehouse_id) throw badRequest('โซนนี้ยังไม่ได้อยู่ในคลังสินค้าใด');
+
+  const w = await getWarehouse(z.warehouse_id);
+  const x = pos_x === undefined ? z.pos_x : Number(pos_x);
+  const y = pos_y === undefined ? z.pos_y : Number(pos_y);
+  const sx = Math.max(1, span_x === undefined ? z.span_x : Number(span_x));
+  const sy = Math.max(1, span_y === undefined ? z.span_y : Number(span_y));
+
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 ||
+      x + sx > w.grid_cols || y + sy > w.grid_rows)
+    throw badRequest('พื้นที่อยู่นอกขอบผังคลัง — ลองลดขนาดหรือเลื่อนเข้ามา');
+
+  const racks = await all(
+    `SELECT r.rag_no, r.pos_x, r.pos_y, r.total_levels, r.total_depths
+       FROM rags r JOIN zones zz ON zz.zone_id = r.zone_id
+      WHERE zz.warehouse_id = ? AND r.pos_x IS NOT NULL`, z.warehouse_id);
+  const hitRack = racks.filter((r) => {
+    const rs = rackSpan(r);
+    return x < r.pos_x + rs.cols && x + sx > r.pos_x && y < r.pos_y + rs.rows && y + sy > r.pos_y;
+  });
+  if (hitRack.length)
+    throw conflict(`พื้นที่นี้ทับกับชั้นวาง ${hitRack.map((r) => r.rag_no).join(', ')} — เลือกที่อื่นหรือลดขนาด`);
+
+  const others = (await all(
+    `SELECT zone_code, pos_x, pos_y, span_x, span_y FROM zones
+      WHERE warehouse_id = ? AND zone_id <> ? AND zone_type <> 'RACK' AND pos_x IS NOT NULL`,
+    z.warehouse_id, Number(zoneId)))
+    .filter((a) => x < a.pos_x + a.span_x && x + sx > a.pos_x && y < a.pos_y + a.span_y && y + sy > a.pos_y);
+  if (others.length)
+    throw conflict(`พื้นที่นี้ทับกับ ${others.map((a) => a.zone_code).join(', ')} — เลือกที่อื่นหรือลดขนาด`);
+
+  await run('UPDATE zones SET pos_x=?, pos_y=?, span_x=?, span_y=? WHERE zone_id=?', x, y, sx, sy, Number(zoneId));
+  return { zone_id: Number(zoneId), pos_x: x, pos_y: y, span_x: sx, span_y: sy };
 }
 
 /** ลบชั้นวาง — ได้เฉพาะเมื่อไม่มีสินค้าอยู่ */

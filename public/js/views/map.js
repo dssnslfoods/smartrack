@@ -1,9 +1,12 @@
 // แผนผังคลัง — ผังพื้นคลังเลือก RACK + แผนผัง RACK รายตัว (ชั้น × ความลึก) + จัดเก็บสินค้า
-import { api, auth, wh, openLabels } from '../api.js?v=49';
-import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table } from '../ui.js?v=49';
-import { itemActions } from '../actions.js?v=49';
+import { api, auth, wh, openLabels } from '../api.js?v=50';
+import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table } from '../ui.js?v=50';
+import { itemActions } from '../actions.js?v=50';
 
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
+
+// โซนที่ไม่ใช่ชั้นวาง — วาดเป็น "พื้นที่" บนผัง ไม่ใช่กล่องชั้นวาง
+const AREA_LABEL = { FLOOR: 'พื้นราบ', BREAK: 'พื้นที่เศษ' };
 
 function rackSpan(r) {
   return {
@@ -65,11 +68,14 @@ async function warehouseFloorPanel(wh) {
   }
 
   const { warehouse: whInfo, zones, racks } = layoutData;
+  const areas = (layoutData.areas ?? []).filter((a) => a.pos_x !== null && a.pos_y !== null);
   const board = h('div', { class: 'floor' });
   board.style.gridTemplateColumns = `repeat(${whInfo.grid_cols}, minmax(48px, 1fr))`;
   board.style.gridTemplateRows = `repeat(${whInfo.grid_rows}, minmax(48px, auto))`;
 
   const rackAt = (x, y) => racks.find((r) => r.pos_x === x && r.pos_y === y);
+  const areaAt = (x, y) => areas.find((a) => a.pos_x === x && a.pos_y === y);
+  const areaSpan = (a) => ({ cols: Math.max(1, a.span_x || 1), rows: Math.max(1, a.span_y || 1) });
 
   const covered = new Map();
   for (const r of racks) {
@@ -78,6 +84,13 @@ async function warehouseFloorPanel(wh) {
     for (let dy = 0; dy < s.rows; dy++)
       for (let dx = 0; dx < s.cols; dx++)
         covered.set(`${r.pos_x + dx}:${r.pos_y + dy}`, r);
+  }
+  // พื้นที่กินหลายช่องเหมือนชั้นวาง ต้องจองช่องด้วย ไม่งั้นช่องว่างจะโผล่ทับ
+  for (const a of areas) {
+    const s = areaSpan(a);
+    for (let dy = 0; dy < s.rows; dy++)
+      for (let dx = 0; dx < s.cols; dx++)
+        covered.set(`${a.pos_x + dx}:${a.pos_y + dy}`, a);
   }
 
   function miniGrid(r) {
@@ -95,9 +108,42 @@ async function warehouseFloorPanel(wh) {
     }, ...miniCells);
   }
 
+  // ช่องวางบนพื้นไม่มีชั้น/ตอน จึงเรียงเป็นตารางจัตุรัสตามสัดส่วนพื้นที่จริง
+  function slotGrid(a, s) {
+    const slots = a.slots || [];
+    const cols = Math.max(2, Math.min(12, Math.round(Math.sqrt((slots.length || 1) * s.cols / s.rows)) || 1));
+    return h('div', {
+      class: 'mini-rack',
+      style: `grid-template-columns:repeat(${cols},1fr)`,
+    }, ...slots.map((sl) =>
+      h('i', {
+        class: `mc ${sl.status === 'OCCUPIED' ? 'occ' : sl.status === 'DISABLED' ? 'dis' : 'emp'}`,
+        title: `${sl.location_code} · ${sl.status === 'OCCUPIED' ? 'มีสินค้า' : sl.status === 'DISABLED' ? 'ปิดใช้งาน' : 'ว่าง'}`,
+      })));
+  }
+
   const cells = [];
   for (let y = 0; y < whInfo.grid_rows; y++) {
     for (let x = 0; x < whInfo.grid_cols; x++) {
+      const a = areaAt(x, y);
+      if (a) {
+        const s = areaSpan(a);
+        const label = AREA_LABEL[a.zone_type] ?? a.zone_type;
+        cells.push(h('div', {
+          class: 'floor-area',
+          style: `--zc:${a.color || '#2563eb'}; grid-column:${a.pos_x + 1}/span ${s.cols}; grid-row:${a.pos_y + 1}/span ${s.rows}; cursor:pointer`,
+          title: `${a.zone_code} — ${a.zone_name} · ${label} · ใช้ไป ${a.occupied}/${a.usable} ช่อง · คลิกเพื่อค้นหาสินค้าที่เก็บในพื้นที่นี้`,
+          // รหัสช่องพื้นราบขึ้นต้นด้วยรหัสโซนเสมอ (เช่น FLR-01) ค้นด้วยรหัสโซนจึงได้ของทั้งพื้นที่
+          onclick: () => (location.hash = `#/search?q=${encodeURIComponent(a.zone_code)}`),
+        },
+          h('div', { class: 'fa-header' },
+            h('div', {},
+              h('div', { class: 'fa-code' }, a.zone_code),
+              h('div', { class: 'fa-type' }, label)),
+            h('div', { class: 'fa-use' }, `${a.occupied}/${a.usable}`)),
+          slotGrid(a, s)));
+        continue;
+      }
       const r = rackAt(x, y);
       if (r) {
         const s = rackSpan(r);
@@ -124,11 +170,24 @@ async function warehouseFloorPanel(wh) {
   }
   board.replaceChildren(...cells);
 
+  const areaByZone = new Map(areas.map((a) => [a.zone_id, a]));
   const zoneLegend = h('div', { class: 'map-zone-legend' },
-    ...zones.map((z) =>
-      h('div', { class: 'zone-legend-item' },
-        h('i', { style: `background:${z.color || '#2563eb'}` }),
-        h('span', {}, `${z.zone_code} — ${z.zone_name} (${z.rack_count})`))));
+    ...zones.map((z) => {
+      const a = areaByZone.get(z.zone_id);
+      const label = AREA_LABEL[z.zone_type];
+      return h('div', {
+        class: 'zone-legend-item',
+        title: a
+          ? `${z.zone_name} — ${label} ${a.total} ช่อง ใช้ไป ${a.occupied}/${a.usable}`
+          : `${z.zone_name} — ชั้นวาง ${z.rack_count} ตัว`,
+      },
+        h('i', a
+          ? { class: 'area', style: `--zc:${z.color || '#2563eb'}` }
+          : { style: `background:${z.color || '#2563eb'}` }),
+        h('span', {}, a
+          ? `${z.zone_code} — ${z.zone_name} · ${label} (${a.total} ช่อง)`
+          : `${z.zone_code} — ${z.zone_name} (${z.rack_count})`));
+    }));
 
   return h('div', { style: 'margin-bottom:22px' },
     h('div', { class: 'wh-band' },
@@ -138,7 +197,9 @@ async function warehouseFloorPanel(wh) {
     h('div', { class: 'card' },
       h('div', { class: 'card-head' },
         h('h2', {}, 'ผังพื้นคลัง'),
-        h('div', { class: 'floor-hint' }, 'คลิกชั้นวางเพื่อดูแผนผังภายในและจัดการสินค้า')),
+        h('div', { class: 'floor-hint' }, areas.length
+          ? 'คลิกชั้นวางเพื่อดูแผนผังภายใน · คลิกพื้นที่ (กรอบประ) เพื่อค้นหาสินค้าที่เก็บอยู่'
+          : 'คลิกชั้นวางเพื่อดูแผนผังภายในและจัดการสินค้า')),
       h('div', { class: 'floor-wrap' }, board),
       zoneLegend));
 }

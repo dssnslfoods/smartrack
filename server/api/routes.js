@@ -112,6 +112,7 @@ export const routes = [
   ['PUT', '/api/warehouses/:id', 'manage', ({ params, body }) => wh.updateWarehouse(+params.id, body)],
   ['DELETE', '/api/warehouses/:id', 'manage', ({ params }) => wh.deleteWarehouse(+params.id)],
   ['PATCH', '/api/rags/:id/position', 'manage', ({ params, body }) => wh.moveRack(+params.id, body)],
+  ['PATCH', '/api/zones/:id/area', 'manage', ({ params, body }) => wh.moveArea(+params.id, body)],
   ['DELETE', '/api/rags/:id', 'manage', ({ params }) => wh.deleteRack(+params.id)],
   ['DELETE', '/api/zones/:id', 'manage', ({ params }) => wh.deleteZone(+params.id)],
 

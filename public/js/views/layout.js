@@ -1,15 +1,23 @@
 // ผังคลังสินค้า — เลือกคลัง แล้วจัดวาง RACK บนผังพื้น (เฉพาะ ADMIN แก้ไขได้)
-import { api, auth } from '../api.js?v=49';
-import { h, field, modal, toast, pill, fmtNum, confirmBox } from '../ui.js?v=49';
+import { api, auth } from '../api.js?v=50';
+import { h, field, modal, toast, pill, fmtNum, confirmBox } from '../ui.js?v=50';
 
 const ZONE_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
+
+// ชนิดโซนที่ไม่ใช่ชั้นวาง — วาดเป็น "พื้นที่" สี่เหลี่ยมบนผังแทนบล็อกชั้นวาง
+const AREA_LABEL = { FLOOR: 'พื้นราบ', BREAK: 'พื้นที่เศษ' };
 
 function rackSpan(r) {
   return {
     cols: Math.max(1, Math.min(4, Math.ceil(r.total_depths / 3))),
     rows: Math.max(1, Math.min(3, Math.ceil(r.total_levels / 3))),
   };
+}
+
+// ต่างจากชั้นวาง — ขนาดของพื้นที่ผู้ใช้ตั้งเองได้ ไม่ได้มาจากจำนวนชั้น/ตอน
+function areaSpan(a) {
+  return { cols: Math.max(1, a.span_x || 1), rows: Math.max(1, a.span_y || 1) };
 }
 
 // ============================================================ รายการคลัง
@@ -55,15 +63,21 @@ const reload = () => location.reload();
 export async function warehouseLayoutView({ match }) {
   const whId = Number(match[1]);
   const data = await api.get(`/api/warehouses/${whId}/layout`);
-  const { warehouse: w, zones, racks } = data;
+  const { warehouse: w, zones, racks, areas = [] } = data;
   const canManage = auth.can('manage');
 
-  let selected = null;
-  let dragging = null;
+  // ผังมีของ 2 ชนิดที่ลากได้ จึงต้องจำชนิดไว้ด้วย ไม่งั้นจะเรียก API ผิดตัวตอนวาง
+  let selected = null; // { kind: 'rack' | 'area', item }
+  let dragging = null; // { kind: 'rack' | 'area', item }
   const board = h('div', { class: 'floor' });
   const hint = h('div', { class: 'floor-hint' });
 
   const rackAt = (x, y) => racks.find((r) => r.pos_x === x && r.pos_y === y);
+  const areaAt = (x, y) => areas.find((a) => a.pos_x === x && a.pos_y === y);
+  const asRack = (r) => ({ kind: 'rack', item: r });
+  const asArea = (a) => ({ kind: 'area', item: a });
+  const keyOf = (s) => (s ? `${s.kind}:${s.kind === 'rack' ? s.item.rag_id : s.item.zone_id}` : null);
+  const nameOf = (s) => (s.kind === 'rack' ? `${s.item.zone_code}-${s.item.rag_no}` : `พื้นที่ ${s.item.zone_code}`);
 
   function buildCoveredMap() {
     const covered = new Map();
@@ -74,14 +88,21 @@ export async function warehouseLayoutView({ match }) {
         for (let dx = 0; dx < s.cols; dx++)
           covered.set(`${r.pos_x + dx}:${r.pos_y + dy}`, r);
     }
+    for (const a of areas) {
+      if (a.pos_x === null) continue;
+      const s = areaSpan(a);
+      for (let dy = 0; dy < s.rows; dy++)
+        for (let dx = 0; dx < s.cols; dx++)
+          covered.set(`${a.pos_x + dx}:${a.pos_y + dy}`, a);
+    }
     return covered;
   }
 
   function renderHint() {
     if (!canManage) { hint.replaceChildren('คลิกชั้นวางเพื่อดูแผนผังภายใน'); return; }
     hint.replaceChildren(selected
-      ? `กำลังย้าย ${selected.zone_code}-${selected.rag_no} — คลิกช่องปลายทาง (คลิกซ้ำที่เดิมเพื่อยกเลิก)`
-      : 'คลิกช่องว่างเพื่อเพิ่มชั้นวาง · คลิกหรือลากชั้นวางเพื่อย้าย');
+      ? `กำลังย้าย ${nameOf(selected)} — คลิกช่องปลายทาง (คลิกซ้ำที่เดิมเพื่อยกเลิก)`
+      : 'คลิกช่องว่างเพื่อเพิ่มชั้นวาง · คลิกหรือลากชั้นวางหรือพื้นที่เพื่อย้าย');
   }
 
   function renderBoard() {
@@ -93,8 +114,11 @@ export async function warehouseLayoutView({ match }) {
     for (let y = 0; y < w.grid_rows; y++) {
       for (let x = 0; x < w.grid_cols; x++) {
         const r = rackAt(x, y);
+        const a = areaAt(x, y);
         if (r) {
           cells.push(rackCell(r));
+        } else if (a) {
+          cells.push(areaCell(a));
         } else if (!covered.has(`${x}:${y}`)) {
           cells.push(emptyCell(x, y));
         }
@@ -136,7 +160,8 @@ export async function warehouseLayoutView({ match }) {
   }
 
   function rackCell(r) {
-    const isSel = selected?.rag_id === r.rag_id;
+    const key = `rack:${r.rag_id}`;
+    const isSel = keyOf(selected) === key;
     const s = rackSpan(r);
     return h('div', {
       class: `floor-rack ${isSel ? 'selected' : ''} ${r.status === 'INACTIVE' ? 'off' : ''}`,
@@ -144,7 +169,7 @@ export async function warehouseLayoutView({ match }) {
       title: `${r.zone_code}-${r.rag_no} · ${r.zone_name} · ${r.total_levels}ชั้น×${r.total_depths / 2}ล็อค`,
       draggable: canManage ? 'true' : null,
       ondragstart: canManage ? (e) => {
-        dragging = r;
+        dragging = asRack(r);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', r.rag_id);
         e.currentTarget.classList.add('dragging');
@@ -155,11 +180,11 @@ export async function warehouseLayoutView({ match }) {
         e.currentTarget.classList.remove('dragging');
         board.classList.remove('drag-active');
       } : null,
-      ondragover: canManage ? (e) => { if (dragging && dragging.rag_id !== r.rag_id) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); } } : null,
+      ondragover: canManage ? (e) => { if (dragging && keyOf(dragging) !== key) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); } } : null,
       ondragleave: canManage ? (e) => { e.currentTarget.classList.remove('drag-over'); } : null,
-      ondrop: canManage ? (e) => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); if (dragging && dragging.rag_id !== r.rag_id) doMove(dragging, r.pos_x, r.pos_y); } : null,
+      ondrop: canManage ? (e) => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); if (dragging && keyOf(dragging) !== key) doMove(dragging, r.pos_x, r.pos_y); } : null,
       onclick: () => {
-        if (selected && selected.rag_id !== r.rag_id) return doMove(selected, r.pos_x, r.pos_y);
+        if (selected && keyOf(selected) !== key) return doMove(selected, r.pos_x, r.pos_y);
         if (selected) { selected = null; renderBoard(); return; }
         rackMenu(r);
       },
@@ -172,13 +197,116 @@ export async function warehouseLayoutView({ match }) {
       miniGrid(r));
   }
 
-  async function doMove(rack, x, y) {
+  // ---------------- บล็อกพื้นที่ราบ / พื้นที่เศษ ----------------
+  function areaCell(a) {
+    const key = `area:${a.zone_id}`;
+    const isSel = keyOf(selected) === key;
+    const sp = areaSpan(a);
+    const label = AREA_LABEL[a.zone_type] ?? a.zone_type;
+    return h('div', {
+      class: `floor-area ${isSel ? 'selected' : ''} ${a.status === 'INACTIVE' ? 'off' : ''}`,
+      style: `--zc:${a.color || '#d97706'}; grid-column:${a.pos_x + 1}/span ${sp.cols}; grid-row:${a.pos_y + 1}/span ${sp.rows}`,
+      title: `${a.zone_code} — ${a.zone_name} · ${label} · กินพื้นที่ ${sp.cols}×${sp.rows} ช่องบนผัง · ใช้งาน ${a.occupied}/${a.usable} ช่องวาง — คลิกเพื่อย้ายหรือปรับขนาด`,
+      draggable: canManage ? 'true' : null,
+      ondragstart: canManage ? (e) => {
+        dragging = asArea(a);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', `zone:${a.zone_id}`);
+        e.currentTarget.classList.add('dragging');
+        board.classList.add('drag-active');
+      } : null,
+      ondragend: canManage ? (e) => {
+        dragging = null;
+        e.currentTarget.classList.remove('dragging');
+        board.classList.remove('drag-active');
+      } : null,
+      ondragover: canManage ? (e) => { if (dragging && keyOf(dragging) !== key) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); } } : null,
+      ondragleave: canManage ? (e) => { e.currentTarget.classList.remove('drag-over'); } : null,
+      ondrop: canManage ? (e) => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); if (dragging && keyOf(dragging) !== key) doMove(dragging, a.pos_x, a.pos_y); } : null,
+      onclick: () => {
+        if (selected && keyOf(selected) !== key) return doMove(selected, a.pos_x, a.pos_y);
+        if (selected) { selected = null; renderBoard(); return; }
+        areaMenu(a);
+      },
+    },
+      h('div', { class: 'fa-header' },
+        h('div', {},
+          h('div', { class: 'fa-code' }, a.zone_code),
+          h('div', { class: 'fa-type' }, label)),
+        h('div', { class: 'fa-use' }, `${a.occupied}/${a.usable}`)),
+      h('div', { class: 'fa-name' }, a.zone_name),
+      canManage ? h('button', {
+        class: 'fa-resize',
+        title: `ปรับขนาดพื้นที่ ${a.zone_code} บนผัง (กว้าง × สูง เป็นจำนวนช่อง) — ไม่กระทบจำนวนช่องวางสินค้าจริง`,
+        onclick: (e) => { e.stopPropagation(); areaResizeForm(a); },
+      }, '⤢') : null);
+  }
+
+  async function doMove(sel, x, y) {
     try {
-      await api.patch(`/api/rags/${rack.rag_id}/position`, { pos_x: x, pos_y: y });
-      toast(`ย้าย ${rack.rag_no} แล้ว`);
+      if (sel.kind === 'area') {
+        await api.patch(`/api/zones/${sel.item.zone_id}/area`, { pos_x: x, pos_y: y });
+        toast(`ย้ายพื้นที่ ${sel.item.zone_code} แล้ว`);
+      } else {
+        await api.patch(`/api/rags/${sel.item.rag_id}/position`, { pos_x: x, pos_y: y });
+        toast(`ย้าย ${sel.item.rag_no} แล้ว`);
+      }
       selected = null;
       refresh();
-    } catch (err) { toast(err.message, 'err'); }
+    } catch (err) {
+      // เซิร์ฟเวอร์ปฏิเสธ (ทับกันหรือนอกผัง) ต้องวาดใหม่ให้บล็อกกลับไปอยู่ที่เดิม
+      toast(err.message, 'err');
+      renderBoard();
+    }
+  }
+
+  // ---------------- ปรับขนาดพื้นที่ ----------------
+  function areaResizeForm(a) {
+    const sp = areaSpan(a);
+    const sx = h('input', { type: 'number', min: '1', max: String(w.grid_cols), value: String(sp.cols) });
+    const sy = h('input', { type: 'number', min: '1', max: String(w.grid_rows), value: String(sp.rows) });
+
+    const m = modal(`ปรับขนาดพื้นที่ ${a.zone_code}`,
+      h('div', {},
+        h('div', { class: 'grid g2' },
+          field('กว้าง (ช่อง)', sx, `ผังกว้าง ${w.grid_cols} ช่อง`, 'จำนวนช่องแนวนอนที่พื้นที่นี้กินบนผัง — เป็นขนาดที่วาดเท่านั้น ไม่ใช่จำนวนช่องวางสินค้า'),
+          field('สูง (ช่อง)', sy, `ผังลึก ${w.grid_rows} ช่อง`, 'จำนวนช่องแนวตั้งที่พื้นที่นี้กินบนผัง — ขยายแล้วต้องไม่ทับชั้นวางหรือพื้นที่อื่น')),
+        h('div', { class: 'hint' }, `ตอนนี้อยู่ที่ คอลัมน์ ${a.pos_x + 1} · แถว ${a.pos_y + 1} · ขนาด ${sp.cols}×${sp.rows} ช่อง`)),
+      [
+        h('button', { class: 'btn', title: 'ปิดหน้าต่างโดยไม่บันทึกขนาดใหม่', onclick: () => m.close() }, 'ยกเลิก'),
+        h('button', { class: 'btn primary', title: 'บันทึกขนาดใหม่ของพื้นที่บนผัง — ถ้าขยายแล้วทับชั้นวางหรือพื้นที่อื่น ระบบจะไม่บันทึกและแจ้งว่าทับกับอะไร', onclick: async () => {
+          try {
+            const span_x = Number(sx.value);
+            const span_y = Number(sy.value);
+            if (!Number.isInteger(span_x) || !Number.isInteger(span_y) || span_x < 1 || span_y < 1)
+              throw new Error('ขนาดต้องเป็นจำนวนเต็มอย่างน้อย 1 ช่อง');
+            await api.patch(`/api/zones/${a.zone_id}/area`, { span_x, span_y });
+            toast(`ปรับขนาด ${a.zone_code} เป็น ${span_x}×${span_y} ช่องแล้ว`);
+            m.close(); refresh();
+          } catch (err) { toast(err.message, 'err'); }
+        } }, 'บันทึก'),
+      ]);
+  }
+
+  // ---------------- เมนูของพื้นที่ ----------------
+  function areaMenu(a) {
+    const sp = areaSpan(a);
+    const label = AREA_LABEL[a.zone_type] ?? a.zone_type;
+    const m = modal(`พื้นที่ ${a.zone_code}`,
+      h('div', {},
+        h('div', { class: 'grid g2' },
+          kv('โซน', `${a.zone_code} — ${a.zone_name}`),
+          kv('ชนิดที่เก็บ', label),
+          kv('ช่องวางทั้งหมด', fmtNum(a.total)),
+          kv('ใช้งาน', `${a.occupied}/${a.usable} (${a.usage_pct}%)`),
+          kv('ตำแหน่งบนผัง', `คอลัมน์ ${a.pos_x + 1} · แถว ${a.pos_y + 1} (${sp.cols}×${sp.rows} ช่อง)`),
+          kv('สถานะ', a.status === 'ACTIVE' ? 'ใช้งาน' : 'ปิดใช้งาน'))),
+      [
+        canManage ? h('button', { class: 'btn', title: 'ย้ายพื้นที่นี้ไปจุดอื่นบนผังพื้น — ปิดหน้าต่างแล้วคลิกช่องปลายทางที่ต้องการ (รหัสตำแหน่งสินค้าไม่เปลี่ยน)', onclick: () => { m.close(); selected = asArea(a); renderBoard(); } }, '✥ ย้ายตำแหน่ง') : null,
+        canManage ? h('button', { class: 'btn', title: 'เปลี่ยนขนาดของพื้นที่นี้บนผัง (กว้าง × สูง เป็นจำนวนช่อง) — ไม่กระทบจำนวนช่องวางสินค้าจริง', onclick: () => { m.close(); areaResizeForm(a); } }, '⤢ ปรับขนาด') : null,
+        canManage ? h('button', { class: 'btn', title: 'แก้ไขรหัส ชื่อ สี หรือสถานะของโซนพื้นที่นี้', onclick: () => { m.close(); zoneForm(zones.find((z) => z.zone_id === a.zone_id) ?? a); } }, '✎ แก้ไขโซน') : null,
+        h('button', { class: 'btn', title: 'ปิดหน้าต่างนี้โดยไม่เปลี่ยนแปลงอะไร', onclick: () => m.close() }, 'ปิด'),
+      ].filter(Boolean));
   }
 
   // ---------------- เมนูของชั้นวาง ----------------
@@ -196,7 +324,7 @@ export async function warehouseLayoutView({ match }) {
         r.note ? h('p', { class: 'muted', style: 'margin-top:8px' }, r.note) : null),
       [
         h('a', { class: 'btn', title: 'เปิดผังภายในชั้นวางนี้ ดูทุกช่องแยกตามชั้น (Level) และตอน (Depth) ว่ามีสินค้าอะไรอยู่', href: `#/map/${r.rag_id}` }, '🗺️ ดูแผนผังภายใน'),
-        canManage ? h('button', { class: 'btn', title: 'ย้ายชั้นวางนี้ไปช่องอื่นบนผังพื้น — ปิดหน้าต่างแล้วคลิกช่องปลายทางที่ต้องการ (รหัสตำแหน่งสินค้าไม่เปลี่ยน)', onclick: () => { m.close(); selected = r; renderBoard(); } }, '✥ ย้ายตำแหน่ง') : null,
+        canManage ? h('button', { class: 'btn', title: 'ย้ายชั้นวางนี้ไปช่องอื่นบนผังพื้น — ปิดหน้าต่างแล้วคลิกช่องปลายทางที่ต้องการ (รหัสตำแหน่งสินค้าไม่เปลี่ยน)', onclick: () => { m.close(); selected = asRack(r); renderBoard(); } }, '✥ ย้ายตำแหน่ง') : null,
         canManage ? h('button', { class: 'btn', title: 'แก้ไขหมายเลข โซน จำนวนชั้น/ตอน หรือปิดใช้งานชั้นวางนี้ — การเพิ่มชั้น/ตอนจะสร้างตำแหน่งใหม่เพิ่มให้อัตโนมัติ', onclick: () => { m.close(); rackForm(r); } }, '✎ แก้ไข') : null,
         canManage ? h('button', {
           class: 'btn danger',

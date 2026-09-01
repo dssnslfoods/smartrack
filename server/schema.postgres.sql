@@ -355,3 +355,11 @@ LEFT JOIN warehouses w ON w.warehouse_id = z.warehouse_id
 WHERE i.status = 'IN_STOCK';
 
 ALTER TABLE pallets ENABLE ROW LEVEL SECURITY;
+
+-- ---------- ตำแหน่งของโซนพื้นราบบนผังพื้นคลัง ----------
+-- โซนพื้นราบเป็น "พื้นที่" ไม่ใช่ชั้นวางเดี่ยว ๆ จึงกินพื้นที่เป็นสี่เหลี่ยมบนผัง
+-- (ชั้นวางใช้ rags.pos_x/pos_y เหมือนเดิม ส่วนขนาดคำนวณจากจำนวนชั้น/ตอน)
+ALTER TABLE zones ADD COLUMN IF NOT EXISTS pos_x  INTEGER;
+ALTER TABLE zones ADD COLUMN IF NOT EXISTS pos_y  INTEGER;
+ALTER TABLE zones ADD COLUMN IF NOT EXISTS span_x INTEGER NOT NULL DEFAULT 3 CHECK (span_x BETWEEN 1 AND 40);
+ALTER TABLE zones ADD COLUMN IF NOT EXISTS span_y INTEGER NOT NULL DEFAULT 2 CHECK (span_y BETWEEN 1 AND 40);
