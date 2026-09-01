@@ -1,5 +1,5 @@
-import { api, auth } from '../api.js?v=47';
-import { h, field, toast } from '../ui.js?v=47';
+import { api, auth } from '../api.js?v=48';
+import { h, field, toast } from '../ui.js?v=48';
 
 export function loginView() {
   const username = h('input', { placeholder: 'ชื่อผู้ใช้', autocomplete: 'username' });

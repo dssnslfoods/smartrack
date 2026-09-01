@@ -104,6 +104,32 @@ export const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('th-TH', { day
 export const fmtDateTime = (d) => (d ? new Date(String(d).replace(' ', 'T')).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 export const fmtNum = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('th-TH'));
 
+/**
+ * แตกจำนวนหน่วยฐานเป็น "กี่ลัง กี่ชิ้น" ตามขนาดบรรจุของสินค้านั้น
+ * เช่น 22 ชิ้น เมื่อ 1 ลัง = 20 ชิ้น → "1 ลัง 2 ชิ้น"
+ *
+ * คลังพูดกันเป็นลัง แต่ระบบเก็บเป็นหน่วยฐานเสมอเพื่อให้ตัวเลขตรงกันทุกหน้า
+ * ฟังก์ชันนี้ใช้แสดงผลอย่างเดียว ไม่เปลี่ยนค่าที่บันทึกจริง
+ *
+ * @param {object|null} pack หน่วยลัง { unit_name, factor } — ไม่มีให้ส่ง null
+ * @returns {string|null} null เมื่อยังไม่ถึง 1 ลัง (แสดงหน่วยฐานพอ ไม่ต้องรกตา)
+ */
+export function packBreakdown(qty, pack, baseUnit = '') {
+  const factor = Number(pack?.factor);
+  const n = Number(qty);
+  if (!pack || !Number.isFinite(factor) || factor <= 1 || !Number.isFinite(n) || n <= 0) return null;
+  const boxes = Math.floor(n / factor);
+  const rest = n % factor;
+  if (!boxes) return null;
+  return rest
+    ? `${fmtNum(boxes)} ${pack.unit_name} ${fmtNum(rest)} ${baseUnit}`.trim()
+    : `${fmtNum(boxes)} ${pack.unit_name}`;
+}
+
+/** หน่วยลังที่ใหญ่ที่สุดของสินค้า — ใช้เป็นตัวหลักในการแตกจำนวน */
+export const biggestPack = (units) =>
+  (units ?? []).filter((u) => Number(u.factor) > 1).sort((a, b) => b.factor - a.factor)[0] ?? null;
+
 export const MOVE_LABEL = { STORE: 'จัดเก็บเข้า', REMOVE: 'หยิบออก', MOVE: 'ย้ายตำแหน่ง', EDIT: 'แก้ไขข้อมูล' };
 export const MOVE_COLOR = { STORE: 'green', REMOVE: 'amber', MOVE: 'blue', EDIT: 'gray' };
 export const STATUS_LABEL = {

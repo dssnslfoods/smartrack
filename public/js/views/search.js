@@ -1,7 +1,7 @@
 // ค้นหาสินค้า — ตอบคำถามหลัก "สินค้าตัวนี้อยู่ที่ไหน"
-import { api, auth, wh, download } from '../api.js?v=47';
-import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill, PTYPE_LABEL } from '../ui.js?v=47';
-import { itemActions } from '../actions.js?v=47';
+import { api, auth, wh, download } from '../api.js?v=48';
+import { h, table, pill, expiryPill, field, fmtNum, fmtDateTime, scanInput, modal, MOVE_LABEL, MOVE_COLOR, pctPill, PTYPE_LABEL } from '../ui.js?v=48';
+import { itemActions } from '../actions.js?v=48';
 
 // ---- สเกลสีตามอายุคงเหลือ — ยิ่งแดงยิ่งต้องรีบระบาย ----
 const EXP_SCALE = [

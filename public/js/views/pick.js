@@ -1,14 +1,16 @@
 // วางแผนหยิบสินค้าตามใบสั่งขาย (SO) — 1 ใบสั่งมีได้หลายสินค้า
 // ระบุ SO ก่อน → เพิ่มสินค้าทีละรายการ → ระบบคำนวณ FEFO ให้ → แก้ตำแหน่งเองได้ → ยืนยันทีเดียวทั้งใบ
-import { api, auth, wh } from '../api.js?v=47';
-import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal, scanInput } from '../ui.js?v=47';
+import { api, auth, wh } from '../api.js?v=48';
+import { h, field, table, pill, expiryPill, fmtNum, fmtDate, toast, confirmBox, modal, scanInput, pickFiles, progress, packBreakdown, biggestPack } from '../ui.js?v=48';
 
 export async function pickView() {
-  const [skus, zones, channels] = await Promise.all([
+  const [skus, zones, channels, aiStatus] = await Promise.all([
     api.get('/api/skus', { warehouse_id: wh.id }),
     api.get('/api/zones', { warehouse_id: wh.id }),
     api.get('/api/channels').catch(() => []),
+    api.get('/api/ai/status').catch(() => ({ enabled: false })),
   ]);
+  const aiOn = aiStatus.enabled;
 
   // รายการสินค้าในใบสั่งนี้ — 1 ช่องต่อ 1 SKU พร้อมแผนหยิบของตัวเอง
   const cart = [];
@@ -22,6 +24,99 @@ export async function pickView() {
       h('option', { value: c.channel_id },
         `${c.channel_code} — ${c.channel_name}${c.min_pct_remaining !== null ? ` (อายุ ≥${c.min_pct_remaining}%)` : ''}`)));
   const soNote = h('input', { placeholder: 'หมายเหตุของใบสั่ง (ถ้ามี)' });
+
+  // ---------------- สแกนใบสั่งขายด้วย AI ----------------
+  // AI อ่านเอกสารแล้วเติมหัวใบ + รายการสินค้าให้เท่านั้น ไม่บันทึกอะไร คนต้องตรวจและกดยืนยันเอง
+  const scanStatus = h('div', {});
+  const scanBtns = [];
+
+  async function scanSO(capture) {
+    let files;
+    try { files = await pickFiles({ accept: 'image/*,application/pdf', multiple: true, capture }); }
+    catch (err) { toast(err.message, 'err'); return; }
+    if (!files.length) return;
+
+    const prog = progress('', {
+      steps: [
+        `กำลังอัปโหลดเอกสาร ${files.length} ไฟล์…`,
+        'AI กำลังอ่านรายการบนใบสั่ง…',
+        'กำลังจับคู่ชื่อสินค้ากับรหัสในระบบ…',
+        'กำลังคำนวณตำแหน่งหยิบตาม FEFO…',
+        'ใกล้เสร็จแล้ว…',
+      ],
+    });
+    scanStatus.replaceChildren(prog.el);
+    for (const b of scanBtns) b.disabled = true;
+    try {
+      const r = await api.post('/api/ai/scan-so', { files });
+      await applyScan(r);
+    } catch (err) {
+      scanStatus.replaceChildren(h('div', { class: 'note bad' }, `อ่านใบสั่งไม่สำเร็จ: ${err.message}`));
+    } finally {
+      prog.stop();
+      for (const b of scanBtns) b.disabled = false;
+    }
+  }
+
+  async function applyScan(r) {
+    if (r.ref_no && !soRef.value) soRef.value = r.ref_no;
+    if (r.party && !customer.value) customer.value = r.party;
+
+    // บรรทัดที่จับคู่ได้และยังไม่อยู่ในใบ → คำนวณแผน FEFO ให้เลย (ขนานกัน จะได้ไม่ช้า)
+    const ready = r.lines.filter((l) => l.sku_id && l.quantity > 0 && !cart.some((c) => c.sku.sku_id === l.sku_id));
+    const results = await Promise.all(ready.map(async (l) => {
+      const [plan, units] = await Promise.all([
+        api.get('/api/pick/plan', {
+          sku_id: l.sku_id, quantity: l.quantity,
+          warehouse_id: wh.id, strategy: strategy.value,
+        }),
+        unitCache.has(l.sku_id) ? unitCache.get(l.sku_id) : api.get(`/api/skus/${l.sku_id}/units`).catch(() => []),
+      ]);
+      unitCache.set(l.sku_id, units);
+      return { l, plan, units };
+    }).map((p) => p.catch(() => null)));
+
+    for (const ok of results) {
+      if (!ok) continue;
+      cart.push({
+        sku: ok.plan.sku,
+        requested: ok.plan.requested,
+        strategy: ok.plan.strategy,
+        filter: ok.plan.filter,
+        lines: ok.plan.lines.map((x) => ({ ...x })),
+        skipped: ok.plan.skipped,
+        manual: false,
+        pack: biggestPack(ok.units),
+        fromScan: ok.l.raw_text,
+      });
+    }
+    renderCart(); renderSkus();
+
+    // บรรทัดที่ยังใช้ไม่ได้ ต้องบอกให้ชัดว่าอันไหนและเพราะอะไร ไม่ใช่เงียบหายไป
+    const pending = r.lines.filter((l) => !ready.includes(l));
+    const added = results.filter(Boolean).length;
+    scanStatus.replaceChildren(
+      h('div', { class: added ? 'note ok' : 'note bad' },
+        `📄 อ่านได้ ${r.stats.total} บรรทัด — เพิ่มเข้าใบสั่งอัตโนมัติ ${added} รายการ`,
+        pending.length ? ` · ต้องจัดการเอง ${pending.length} รายการ` : ''),
+      ...(r.warnings ?? []).map((w) => h('div', { class: 'note', style: 'background:#fffbeb;border-color:#fcd34d;color:#92400e' }, `⚠️ ${w}`)),
+      pending.length
+        ? h('details', { class: 'card', style: 'margin-top:10px' },
+            h('summary', {}, `บรรทัดที่ยังไม่ได้เพิ่ม ${pending.length} รายการ — กดดูรายละเอียด`),
+            table([
+              { label: 'บนเอกสาร', value: (l) => h('div', {}, l.raw_text,
+                  l.doc_code ? h('div', { class: 'mono muted', style: 'font-size:12px' }, l.doc_code) : null) },
+              { label: 'จำนวน', value: (l) => `${fmtNum(l.quantity)} ${l.unit ?? ''}`, num: true },
+              { label: 'จับคู่ได้', value: (l) => (l.sku_code ? l.sku_code : pill('จับคู่ไม่ได้', 'red')), mono: true },
+              { label: 'เหตุผล', value: (l) => h('span', { class: 'muted' },
+                  l.note ?? (cart.some((c) => c.sku.sku_id === l.sku_id) ? 'อยู่ในใบสั่งนี้แล้ว' : 'ตรวจสอบเอง')) },
+            ], pending))
+        : null);
+
+    toast(added
+      ? `เพิ่ม ${added} รายการเข้าใบสั่งแล้ว — ตรวจก่อนยืนยันนะครับ`
+      : 'อ่านเอกสารได้ แต่ยังเพิ่มอัตโนมัติไม่ได้ — ดูรายละเอียดด้านล่าง', added ? 'ok' : 'err');
+  }
 
   // ---------------- 2. เพิ่มสินค้าเข้าใบสั่ง ----------------
   const skuSearch = h('input', { placeholder: 'พิมพ์ชื่อสินค้า หรือรหัสสินค้า เช่น แป้ง, FG-CRM' });
@@ -44,7 +139,7 @@ export async function pickView() {
         title: inCart
           ? `${s.sku_name} อยู่ในใบสั่งนี้แล้ว — แก้จำนวนหรือตำแหน่งได้ที่รายการด้านล่าง`
           : `เลือก ${s.sku_name} แล้วกรอกจำนวนที่ต้องการ เพื่อเพิ่มเข้าใบสั่งนี้`,
-        onclick: () => { sku = s; renderSkus(); qty.focus(); },
+        onclick: async () => { sku = s; await loadUnits(s); renderSkus(); qty.focus(); },
       },
         h('div', {},
           h('div', { style: 'font-weight:700' }, s.sku_name, inCart ? ' ' : null, inCart ? pill('อยู่ในใบสั่งแล้ว', 'blue') : null),
@@ -56,7 +151,41 @@ export async function pickView() {
   }
   skuSearch.addEventListener('input', renderSkus);
 
+  // ---- สั่งเป็นลังหรือชิ้นก็ได้ ----
+  // คลังพูดกันเป็นลัง แต่ระบบเก็บเป็นหน่วยฐานเสมอ จึงแปลงตอนรับค่าและแสดงย้อนกลับให้เห็นทั้งสองแบบ
   const qty = h('input', { type: 'number', min: '1', placeholder: 'เช่น 500' });
+  const qtyUnit = h('select', { style: 'width:110px' });
+  const qtyHint = h('div', { class: 'muted', style: 'font-size:12px;margin-top:4px;min-height:16px' });
+  const unitCache = new Map();   // sku_id → รายการหน่วยของสินค้านั้น
+
+  async function loadUnits(s) {
+    if (!unitCache.has(s.sku_id)) {
+      unitCache.set(s.sku_id, await api.get(`/api/skus/${s.sku_id}/units`).catch(() => []));
+    }
+    const units = unitCache.get(s.sku_id);
+    qtyUnit.replaceChildren(
+      h('option', { value: '1' }, s.unit),
+      ...units.filter((u) => Number(u.factor) > 1)
+        .map((u) => h('option', { value: String(u.factor) }, `${u.unit_name} (×${fmtNum(u.factor)})`)));
+    qtyUnit.value = '1';
+    syncQtyHint();
+  }
+
+  const packOf = (s) => biggestPack(unitCache.get(s?.sku_id));
+  const baseQty = () => Math.round(Number(qty.value || 0) * Number(qtyUnit.value || 1));
+
+  function syncQtyHint() {
+    if (!sku || !qty.value) { qtyHint.textContent = ''; return; }
+    const base = baseQty();
+    const pack = packOf(sku);
+    const parts = [`= ${fmtNum(base)} ${sku.unit}`];
+    const brk = packBreakdown(base, pack, sku.unit);
+    if (brk && Number(qtyUnit.value) === 1) parts.push(`(${brk})`);
+    qtyHint.textContent = Number(qtyUnit.value) === 1 && !brk ? '' : parts.join(' ');
+  }
+  qty.addEventListener('input', syncQtyHint);
+  qtyUnit.addEventListener('change', syncQtyHint);
+
   const minDays = h('input', { type: 'number', min: '0', placeholder: 'เช่น 90' });
   const minUnit = h('select', { style: 'width:80px' },
     h('option', { value: 'days' }, 'วัน'), h('option', { value: 'pct' }, '%'));
@@ -80,7 +209,7 @@ export async function pickView() {
     el.addEventListener('keydown', (e) => e.key === 'Enter' && addItem()));
 
   const planParams = (skuId) => ({
-    sku_id: skuId, quantity: qty.value,
+    sku_id: skuId, quantity: baseQty(),
     min_days: minUnit.value === 'days' ? minDays.value : '',
     max_days: maxUnit.value === 'days' ? maxDays.value : '',
     min_pct: minUnit.value === 'pct' ? minDays.value : '',
@@ -115,9 +244,10 @@ export async function pickView() {
         lines: plan.lines.map((l) => ({ ...l })),
         skipped: plan.skipped,
         manual: false,
+        pack: packOf(sku),
       });
       // เคลียร์ฟอร์มให้พร้อมเพิ่มตัวถัดไปทันที
-      sku = null; qty.value = ''; skuSearch.value = '';
+      sku = null; qty.value = ''; skuSearch.value = ''; qtyHint.textContent = '';
       renderSkus(); renderCart();
       toast(`เพิ่ม ${plan.sku.sku_name} เข้าใบสั่งแล้ว — จัดสรรได้ ${fmtNum(plan.allocated)} ${plan.sku.unit}`,
         plan.complete ? 'ok' : 'err');
@@ -161,6 +291,10 @@ export async function pickView() {
             h('div', { style: 'text-align:right;white-space:nowrap' },
               h('div', { style: 'font-weight:800;font-size:17px;color:var(--brand)' },
                 `${fmtNum(alloc)} / ${fmtNum(it.requested)} ${it.sku.unit}`),
+              // บอกเป็นลังด้วย — คนหน้างานหยิบเป็นลัง ไม่ได้นับทีละชิ้น
+              packBreakdown(alloc, it.pack, it.sku.unit)
+                ? h('div', { class: 'muted', style: 'font-size:12.5px' }, `📦 ${packBreakdown(alloc, it.pack, it.sku.unit)}`)
+                : null,
               short > 0
                 ? pill(`ขาด ${fmtNum(short)}`, 'red')
                 : pill(`${it.lines.length} ตำแหน่ง · ${it.strategy}`, 'green')),
@@ -175,7 +309,9 @@ export async function pickView() {
                 title: `เอา ${it.sku.sku_name} ออกจากใบสั่งนี้ (ยังไม่ตัดสต๊อก)`,
                 onclick: () => { cart.splice(i, 1); renderCart(); renderSkus(); },
               }, '🗑️'))),
-          it.manual ? h('div', { class: 'muted', style: 'font-size:12px;margin-bottom:6px' }, '✏️ แก้ตำแหน่งเองแล้ว') : null,
+          h('div', { class: 'muted', style: 'font-size:12px;margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap' },
+            it.manual ? h('span', {}, '✏️ แก้ตำแหน่งเองแล้ว') : null,
+            it.fromScan ? h('span', {}, `📄 จากใบสั่งที่สแกน: "${it.fromScan}"`) : null),
           it.lines.length
             ? table([
                 { label: 'ลำดับ', value: (r) => h('span', { class: 'seq' }, r.seq), num: true },
@@ -184,7 +320,11 @@ export async function pickView() {
                 { label: 'Lot', key: 'lot_no', mono: true },
                 { label: 'วันหมดอายุ', value: (r) => (r.exp_date ? h('div', {}, fmtDate(r.exp_date), ' ', expiryPill(r.expiry)) : '—') },
                 { label: 'มีอยู่', value: (r) => `${fmtNum(r.quantity)} ${r.unit}`, num: true },
-                { label: 'หยิบ', value: (r) => h('strong', { class: 'take' }, `${fmtNum(r.take)} ${r.unit}`), num: true },
+                { label: 'หยิบ', value: (r) => h('div', {},
+                    h('strong', { class: 'take' }, `${fmtNum(r.take)} ${r.unit}`),
+                    packBreakdown(r.take, it.pack, it.sku.unit)
+                      ? h('div', { class: 'muted', style: 'font-size:11.5px' }, packBreakdown(r.take, it.pack, it.sku.unit))
+                      : null), num: true },
                 { label: 'หมายเหตุ', value: (r) => (r.needs_forklift ? pill('ชั้นสูง — ใช้รถยก', 'blue') : null) },
               ], it.lines)
             : h('div', { class: 'note bad' }, 'ยังไม่ได้เลือกตำแหน่งหยิบ — กด "เลือกตำแหน่ง" เพื่อระบุเอง'));
@@ -436,9 +576,10 @@ export async function pickView() {
           <td class="check"></td>
         </tr>`;
       }).join('');
+      const brk = packBreakdown(allocOf(it), it.pack, it.sku.unit);
       return `<div class="sku-block">
         <div class="sku-title">${esc(it.sku.sku_name)} <span class="code">${esc(it.sku.sku_code)}</span>
-          <span class="qty">${allocOf(it).toLocaleString('th-TH')} ${esc(it.sku.unit)}</span></div>
+          <span class="qty">${allocOf(it).toLocaleString('th-TH')} ${esc(it.sku.unit)}${brk ? ` · ${esc(brk)}` : ''}</span></div>
         <table>
           <thead><tr>
             <th class="c" style="width:30px">#</th><th>ตำแหน่ง</th><th class="c">ชั้น/ตอน</th>
@@ -530,6 +671,17 @@ ${blocks}
         field('ช่องทางขาย', chSel, 'ระบบจะตรวจ % อายุคงเหลือขั้นต่ำของช่องทางให้ตอนยืนยัน', 'ช่องทางขายที่สั่งสินค้า เช่น MT, GT, Online — แต่ละช่องทางมีเกณฑ์อายุขั้นต่ำต่างกัน'),
         field('หมายเหตุใบสั่ง', soNote, null, 'บันทึกเพิ่มเติมของใบสั่งนี้ เช่น เงื่อนไขการส่ง'))),
 
+    aiOn ? h('div', { class: 'card', style: 'border-left:4px solid var(--brand)' },
+      h('div', { class: 'card-head' },
+        h('div', {},
+          h('h2', {}, '📷 สแกนใบสั่งขายด้วย AI'),
+          h('p', { class: 'muted', style: 'margin:2px 0 0;font-size:13.5px' },
+            'ถ่ายรูปหรือแนบไฟล์ใบสั่งขาย/ใบจัดเตรียมสินค้า แล้ว AI จะอ่านทุกบรรทัดมาเติมให้พร้อมคำนวณตำแหน่งหยิบ — ตรวจก่อนยืนยันเสมอ')),
+        h('div', { class: 'actions' },
+          scanBtns[0] = h('button', { class: 'btn', title: 'เปิดกล้องถ่ายรูปใบสั่งขาย ให้ AI อ่านรายการมาเติมให้ — ระบบยังไม่ตัดสต๊อก ต้องตรวจทุกบรรทัดก่อนยืนยัน', onclick: () => scanSO('environment') }, '📷 ถ่ายรูป'),
+          scanBtns[1] = h('button', { class: 'btn primary', title: 'แนบไฟล์รูปหรือ PDF ของใบสั่งขาย ให้ AI อ่านรายการมาเติมให้ (แนบได้หลายไฟล์) — ต้องตรวจก่อนยืนยันเสมอ', onclick: () => scanSO(null) }, '📎 แนบไฟล์'))),
+      scanStatus) : null,
+
     h('div', { class: 'card' },
       h('h2', {}, '2. เพิ่มสินค้าเข้าใบสั่ง'),
       h('p', { class: 'muted', style: 'margin:2px 0 10px;font-size:13px' },
@@ -537,7 +689,9 @@ ${blocks}
       skuSearch,
       skuList,
       h('div', { class: 'row', style: 'margin-top:12px' },
-        field('จำนวนที่ต้องการ *', qty, null, 'จำนวนสินค้าที่ต้องการหยิบออกจากคลังสำหรับสินค้าตัวนี้'),
+        field('จำนวนที่ต้องการ *',
+          h('div', {}, h('div', { style: 'display:flex;gap:4px' }, qty, qtyUnit), qtyHint),
+          null, 'สั่งเป็นหน่วยฐาน (ชิ้น/ขวด/ก้อน) หรือเป็นลังก็ได้ — ระบบแปลงเป็นหน่วยฐานให้เอง'),
         field('อายุคงเหลืออย่างน้อย', h('div', { style: 'display:flex;gap:4px' }, minDays, minUnit), 'จำนวนวัน — เว้นว่างคือไม่กำหนด', 'สินค้าต้องเหลืออายุอย่างน้อยเท่านี้ถึงจะหยิบได้ — ป้องกันส่งของใกล้หมดอายุ'),
         field('อายุคงเหลือไม่เกิน', h('div', { style: 'display:flex;gap:4px' }, maxDays, maxUnit), 'จำนวนวัน — เว้นว่างคือไม่กำหนด', 'จำกัดไม่ให้หยิบของที่อายุยาวเกินไป เพื่อเก็บไว้ขายทีหลัง')),
       h('div', { class: 'row' },

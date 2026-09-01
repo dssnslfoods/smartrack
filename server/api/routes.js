@@ -265,6 +265,7 @@ export const routes = [
   ['POST', '/api/ai/ask', 'view', ({ body, user }) => ai.copilotAsk({
     messages: body.messages, warehouseId: int(body.warehouse_id), warehouseName: body.warehouse_name }, user)],
   ['POST', '/api/ai/scan-receiving', 'move', ({ body }) => ai.scanReceivingDoc({ files: body.files })],
+  ['POST', '/api/ai/scan-so', 'view', ({ body }) => ai.scanSalesOrder({ files: body.files })],
   ['GET', '/api/ai/brief', 'view', ({ query }) => ai.dailyBrief({
     warehouseId: int(query.warehouse_id), warehouseName: query.warehouse_name })],
   ['GET', '/api/ai/explain', 'view', ({ query }) => ai.explain({

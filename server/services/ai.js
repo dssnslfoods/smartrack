@@ -362,6 +362,117 @@ ${catalog}`,
 }
 
 // ══════════════════════════════════════════════════════════════
+//  1.4  สแกนใบสั่งขาย (SO) → รายการที่ต้องไปหยิบ
+// ══════════════════════════════════════════════════════════════
+
+const SO_SCHEMA = {
+  type: 'object',
+  properties: {
+    ref_no: { type: 'string', description: 'เลขที่ใบสั่งขาย/SO ที่ปรากฏบนเอกสาร เช่น SO-202608102 ไม่พบให้เว้นว่าง' },
+    party: { type: 'string', description: 'ชื่อลูกค้าหรือผู้รับสินค้า ไม่พบให้เว้นว่าง' },
+    doc_date: { type: 'string', description: 'วันที่บนเอกสาร รูปแบบ YYYY-MM-DD ไม่พบให้เว้นว่าง' },
+    lines: {
+      type: 'array',
+      description: 'รายการสินค้าทุกบรรทัดที่ต้องจัดของ',
+      items: {
+        type: 'object',
+        properties: {
+          raw_text: { type: 'string', description: 'ชื่อสินค้าตามที่ปรากฏบนเอกสารจริง' },
+          doc_code: { type: 'string', description: 'รหัสสินค้าตามที่พิมพ์บนเอกสาร (อาจเป็นรหัสของลูกค้า ไม่ใช่รหัสในระบบ)' },
+          sku_code: { type: 'string', description: 'รหัสสินค้าในระบบที่จับคู่ได้จากรายการด้านล่าง ถ้าไม่มั่นใจให้เว้นว่าง' },
+          quantity: { type: 'number', description: 'จำนวนที่ต้องจัด' },
+          unit: { type: 'string', description: 'หน่วยนับตามเอกสาร ไม่พบให้เว้นว่าง' },
+          confidence: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'], description: 'ความมั่นใจในการอ่านและจับคู่บรรทัดนี้' },
+          note: { type: 'string', description: 'สิ่งที่ต้องให้คนตรวจ เช่น อ่านไม่ชัด จับคู่สินค้าไม่ได้ หรือเป็นของแถม/เทสเตอร์' },
+        },
+        required: ['raw_text', 'quantity', 'confidence'],
+      },
+    },
+    warnings: { type: 'array', items: { type: 'string' }, description: 'ข้อสังเกตภาพรวม เช่น เอกสารเบลอ มีลายมือเขียนแทรก' },
+  },
+  required: ['lines'],
+};
+
+/**
+ * อ่านใบสั่งขาย (รูปหรือ PDF) แล้วแปลงเป็นรายการที่ต้องไปหยิบ พร้อมจับคู่ SKU ในระบบ
+ * ไม่บันทึกอะไรทั้งสิ้น — คืนข้อมูลให้หน้าจอเติมให้คนตรวจก่อนยืนยันเอง
+ */
+export async function scanSalesOrder({ files = [] } = {}) {
+  if (!Array.isArray(files) || !files.length) throw badRequest('กรุณาแนบรูปหรือไฟล์ PDF ของใบสั่งขาย');
+  if (files.length > 5) throw badRequest('แนบได้สูงสุด 5 ไฟล์ต่อครั้ง');
+
+  const skus = await all(
+    `SELECT sku_id, sku_code, sku_name, unit, barcode FROM skus WHERE status = 'ACTIVE' ORDER BY sku_code`);
+  if (!skus.length) throw badRequest('ยังไม่มีข้อมูลสินค้าในระบบ — กรุณาเพิ่มสินค้าก่อน');
+
+  const catalog = skus.map((s) => `${s.sku_code} | ${s.sku_name} | หน่วย ${s.unit}${s.barcode ? ` | บาร์โค้ด ${s.barcode}` : ''}`).join('\n');
+  const blocks = files.map((f) => (String(f).startsWith('data:application/pdf') ? pdfBlock(f) : imageBlock(f)));
+
+  const { data, usage } = await callClaudeJSON({
+    system: `คุณคือผู้ช่วยจัดของตามใบสั่งขายของคลังเครื่องสำอาง de leaf thanaka
+อ่านเอกสารใบสั่งขาย/ใบจัดเตรียมสินค้า แล้วดึงรายการสินค้าที่ต้องไปหยิบออกมาให้ครบทุกบรรทัด
+
+กฎ:
+- อ่านเฉพาะสิ่งที่เห็นจริงบนเอกสาร ห้ามแต่งเติมหรือเดาตัวเลขเอง
+- อ่านไม่ออก/ไม่แน่ใจ ให้ confidence เป็น LOW แล้วอธิบายใน note ห้ามเดามั่ว
+- รหัสสินค้าบนเอกสารมักเป็นรหัสของผู้ขาย ไม่ตรงกับรหัสในระบบ
+  ให้ใส่รหัสบนเอกสารใน doc_code แล้วจับคู่จาก "ชื่อสินค้า" กับรายการในระบบด้านล่าง ใส่ผลใน sku_code
+  ถ้าไม่มีตัวไหนใกล้เคียงพอ ให้เว้น sku_code ว่างไว้ แล้วระบุใน note ว่าจับคู่ไม่ได้
+- ชื่อสินค้ามักมีทั้งไทยและอังกฤษปนกัน ให้ดูขนาด/ปริมาณ/แพ็คประกอบด้วย เช่น 100 กรัม แพ็ค 12 ต้องตรงกัน
+- ตัวเลขจำนวนที่มีลูกน้ำคั่นหลักพัน ให้ตัดลูกน้ำออก
+- บรรทัดที่เป็นของแถม เทสเตอร์ หรือตัวอย่าง ให้ดึงมาด้วยแต่ระบุไว้ใน note
+- ถ้ามีลายมือเขียนแทรกบนเอกสาร ให้อ่านเท่าที่อ่านออกและแจ้งใน warnings
+- อย่ารวมยอดข้ามบรรทัด แม้สินค้าจะซ้ำกัน ให้แยกตามที่เอกสารแสดง
+
+รายการสินค้าในระบบ (รหัส | ชื่อ | หน่วย):
+${catalog}`,
+    messages: [{ role: 'user', content: [...blocks, { type: 'text', text: 'อ่านใบสั่งขายนี้แล้วดึงรายการสินค้าที่ต้องไปหยิบออกมาให้ครบทุกบรรทัด' }] }],
+    schema: SO_SCHEMA,
+    name: 'extract_sales_order',
+    description: 'ส่งรายการสินค้าที่อ่านได้จากใบสั่งขาย',
+    model: MODEL.SMART,
+    maxTokens: 4096,
+  });
+
+  // จับคู่ sku_code ที่ AI ให้มากับของจริงในระบบ — ไม่เชื่อ AI ตรงๆ ต้องมีอยู่จริงเท่านั้น
+  const byCode = new Map(skus.map((s) => [String(s.sku_code).toUpperCase(), s]));
+  const lines = (data.lines ?? []).map((l) => {
+    const matched = l.sku_code ? byCode.get(String(l.sku_code).toUpperCase()) ?? null : null;
+    return {
+      raw_text: l.raw_text ?? '',
+      doc_code: l.doc_code || null,
+      sku_id: matched?.sku_id ?? null,
+      sku_code: matched?.sku_code ?? null,
+      sku_name: matched?.sku_name ?? null,
+      base_unit: matched?.unit ?? null,
+      quantity: Number(l.quantity) || 0,
+      unit: l.unit ?? null,
+      confidence: l.confidence ?? 'MEDIUM',
+      note: l.note || (l.sku_code && !matched ? `ไม่พบรหัส ${l.sku_code} ในระบบ` : null),
+      needs_review: !matched || l.confidence === 'LOW' || !(Number(l.quantity) > 0),
+    };
+  });
+
+  const warnings = [...(data.warnings ?? [])];
+  if (lines.some((l) => !l.sku_id)) warnings.push('มีบางบรรทัดจับคู่สินค้าในระบบไม่ได้ — ต้องเลือกสินค้าเอง');
+  if (lines.some((l) => !(l.quantity > 0))) warnings.push('มีบางบรรทัดอ่านจำนวนไม่ได้ — ต้องกรอกเอง');
+
+  return {
+    ref_no: data.ref_no || null,
+    party: data.party || null,
+    doc_date: /^\d{4}-\d{2}-\d{2}$/.test(data.doc_date ?? '') ? data.doc_date : null,
+    lines,
+    warnings: [...new Set(warnings)],
+    stats: {
+      total: lines.length,
+      matched: lines.filter((l) => l.sku_id).length,
+      needs_review: lines.filter((l) => l.needs_review).length,
+    },
+    usage,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
 //  1.3 / 2.x  เรียบเรียงผลวิเคราะห์เป็นคำแนะนำภาษาคน
 // ══════════════════════════════════════════════════════════════
 
