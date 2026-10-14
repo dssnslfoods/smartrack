@@ -523,7 +523,6 @@ i.dot { display: inline-block; width: 14px; height: 14px; border-radius: 4px; ve
 .login-body .field { text-align: left; }
 .login-body .btn.primary.lg { background: #006937; border-color: #006937; margin-top: 6px; font-size: 16px; padding: 12px; border-radius: 10px; }
 .login-body .btn.primary.lg:hover { background: #005a2e; }
-.demo-users { font-size: 12px; color: var(--muted); margin-top: 14px; line-height: 1.7; text-align: left; background: #f8faf9; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8e4; }
 .login-footer { margin-top: 18px; font-size: 11px; color: #94a3b8; text-align: center; }
 .login-footer a { color: #006937; text-decoration: none; }
 

@@ -1,7 +1,7 @@
 // แผนผังคลัง — ผังพื้นคลังเลือก RACK + แผนผัง RACK รายตัว (ชั้น × ความลึก) + จัดเก็บสินค้า
-import { api, auth, wh, openLabels } from '../api.js?v=52';
-import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table , rackSize} from '../ui.js?v=52';
-import { itemActions } from '../actions.js?v=52';
+import { api, auth, wh, openLabels } from '../api.js?v=53';
+import { h, field, modal, pill, expiryPill, toast, fmtNum, fmtDateTime, table , rackSize} from '../ui.js?v=53';
+import { itemActions } from '../actions.js?v=53';
 
 const heatColor = (pct) => (pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : pct >= 35 ? '#2563eb' : '#16a34a');
 

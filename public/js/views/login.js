@@ -1,5 +1,5 @@
-import { api, auth } from '../api.js?v=52';
-import { h, field, toast } from '../ui.js?v=52';
+import { api, auth } from '../api.js?v=53';
+import { h, field, toast } from '../ui.js?v=53';
 
 export function loginView() {
   const username = h('input', { placeholder: 'ชื่อผู้ใช้', autocomplete: 'username' });
@@ -26,11 +26,6 @@ export function loginView() {
         field('ชื่อผู้ใช้', username, null, 'ชื่อผู้ใช้ที่ได้รับจากผู้ดูแลระบบ'),
         field('รหัสผ่าน', password, null, 'รหัสผ่านสำหรับเข้าสู่ระบบ'),
         h('button', { class: 'btn primary lg', style: 'width:100%', title: 'ตรวจสอบชื่อผู้ใช้และรหัสผ่านเพื่อเข้าใช้งานระบบ — สิทธิ์ที่เห็นในเมนูขึ้นกับบทบาทของบัญชีที่ใช้', onclick: submit }, 'เข้าสู่ระบบ'),
-        h('div', { class: 'demo-users' },
-          h('strong', {}, 'บัญชีทดสอบ'), h('br'),
-          'admin / admin123 — ผู้ดูแลระบบ', h('br'),
-          'staff / staff123 — พนักงานคลัง', h('br'),
-          'viewer / viewer123 — ผู้ดูข้อมูล'),
         h('div', { class: 'login-footer' },
           '© 2025 De Leaf Thanaka · ',
           h('a', { href: 'https://deleafthanaka.com', target: '_blank' }, 'deleafthanaka.com')))));
