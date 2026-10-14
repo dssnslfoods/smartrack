@@ -11,6 +11,6 @@ await pool.query(`
   DROP TABLE IF EXISTS movements, stock_items, locations, rags, zones, warehouses, sessions, skus, users CASCADE;
   DROP FUNCTION IF EXISTS trg_movements_immutable() CASCADE;
 `);
-await migrate();
+await migrate({ force: true });
 console.log('ล้างและสร้างโครงสร้างใหม่เรียบร้อย — รัน `npm run seed` ต่อได้');
 await close();

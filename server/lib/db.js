@@ -10,6 +10,7 @@
 import pg from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -119,12 +120,67 @@ export async function tx(fn) {
   }
 }
 
-/** สร้างตาราง/view/index ถ้ายังไม่มี — เรียกครั้งเดียวตอนระบบเริ่มทำงาน */
-export async function migrate() {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * ขอ connection โดยยอมลองใหม่ถ้าพลาด
+ *
+ * Supabase pooler ปฏิเสธการเชื่อมต่อเป็นครั้งคราวตอนมีหลาย instance ตื่นพร้อมกัน
+ * (ขึ้น error ว่า "Tenant or user not found" ทั้งที่รหัสถูก) ถ้าไม่ลองใหม่
+ * container จะตายตั้งแต่ยังไม่ทันเปิดรับ request แล้วผู้ใช้จะเจอ 503
+ */
+export async function connectWithRetry({ attempts = 6, baseDelay = 400 } = {}) {
+  // ไม่มี DATABASE_URL = ตั้งค่าผิด ไม่ใช่เน็ตวูบ — ลองใหม่ไปก็เท่านั้น
+  if (!pool) throw new Error('ไม่ได้ตั้งค่า DATABASE_URL — ตั้งค่าก่อนจึงจะเชื่อมต่อฐานข้อมูลได้');
+  let last;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const client = await pool.connect();
+      client.release();
+      if (i > 1) console.log(`[DB] เชื่อมต่อสำเร็จในครั้งที่ ${i}`);
+      return;
+    } catch (err) {
+      last = err;
+      if (i === attempts) break;
+      const wait = baseDelay * 2 ** (i - 1);
+      console.warn(`[DB] เชื่อมต่อไม่สำเร็จ (ครั้งที่ ${i}/${attempts}): ${err.message} — รออีก ${wait}ms`);
+      await sleep(wait);
+    }
+  }
+  throw last;
+}
+
+/**
+ * สร้างตาราง/view/index ถ้ายังไม่มี
+ *
+ * ไฟล์ schema เขียนให้รันซ้ำได้ แต่ "รันซ้ำได้" ไม่ได้แปลว่าควรรันทุกครั้ง —
+ * บน Cloud Run ทุก cold start จะรันไฟล์ทั้งไฟล์ใหม่ ทั้งที่ schema ไม่ได้เปลี่ยน
+ * ทำให้ startup ช้าและเสี่ยงชนกันเองตอนหลาย instance ตื่นพร้อมกัน
+ * จึงจำลายนิ้วมือของไฟล์ไว้ ถ้าตรงกับที่เคยลงไปแล้วก็ข้าม
+ */
+export async function migrate({ force = false } = {}) {
+  await connectWithRetry();
+
   const sql = readFileSync(join(__dirname, '..', 'schema.postgres.sql'), 'utf8');
+  const hash = createHash('sha256').update(sql).digest('hex');
+
   const client = await pool.connect();
   try {
+    await client.query(
+      'CREATE TABLE IF NOT EXISTS _schema_meta (id INT PRIMARY KEY DEFAULT 1, sql_hash TEXT NOT NULL, applied_at TIMESTAMP DEFAULT now(), CHECK (id = 1))',
+    );
+    if (!force) {
+      const { rows } = await client.query('SELECT sql_hash FROM _schema_meta WHERE id = 1');
+      if (rows[0]?.sql_hash === hash) return { applied: false };
+    }
     await client.query(sql);
+    await client.query(
+      `INSERT INTO _schema_meta (id, sql_hash, applied_at) VALUES (1, $1, now())
+       ON CONFLICT (id) DO UPDATE SET sql_hash = EXCLUDED.sql_hash, applied_at = EXCLUDED.applied_at`,
+      [hash],
+    );
+    console.log('[DB] ปรับโครงสร้างฐานข้อมูลเรียบร้อย');
+    return { applied: true };
   } finally {
     client.release();
   }
